@@ -255,6 +255,60 @@ def gerar_parecer(symbol, anos, hist):
     return parecer
 
 
+def gerar_apreciacao_peers(symbol, df_peers):
+    """Gera um parágrafo de análise comparando o REIT alvo à mediana dos concorrentes."""
+    if df_peers.empty or "Ticker" not in df_peers.columns or symbol not in df_peers["Ticker"].values:
+        return ""
+
+    peers_only = df_peers[df_peers["Ticker"] != symbol]
+    if peers_only.empty:
+        return ""
+
+    target = df_peers[df_peers["Ticker"] == symbol].iloc[0]
+    peers_median = peers_only.median(numeric_only=True)
+
+    def safe_rel(a, b):
+        if pd.isna(a) or pd.isna(b) or b == 0:
+            return np.nan
+        return (a / b) - 1
+
+    p_affo_rel = safe_rel(target.get("Price / AFFO"), peers_median.get("Price / AFFO"))
+    yield_target = target.get("Dividend Yield")
+    yield_peers = peers_median.get("Dividend Yield")
+    debt_target = target.get("Net Debt / EBITDA")
+    debt_peers = peers_median.get("Net Debt / EBITDA")
+
+    if pd.notna(p_affo_rel):
+        if p_affo_rel < -0.05:
+            val_badge = "<span class='badge badge-success'>Desconto vs. Pares</span>"
+        elif p_affo_rel > 0.05:
+            val_badge = "<span class='badge badge-warning'>Prémio vs. Pares</span>"
+        else:
+            val_badge = "<span class='badge badge-info'>Em Linha com os Pares</span>"
+        val_txt = f"negoceia a um múltiplo <b>Price/AFFO de {target['Price / AFFO']:.2f}x</b>, uma variação de <b>{p_affo_rel*100:+.1f}%</b> face à mediana dos concorrentes ({peers_median['Price / AFFO']:.2f}x)"
+    else:
+        val_badge, val_txt = "<span class='badge badge-neutral'>N/A</span>", "não tem dados suficientes para comparar o múltiplo Price/AFFO com os concorrentes"
+
+    if pd.notna(yield_target) and pd.notna(yield_peers):
+        yield_diff = (yield_target - yield_peers) * 100
+        yield_badge = "<span class='badge badge-success'>Acima da Média</span>" if yield_diff > 0 else "<span class='badge badge-warning'>Abaixo da Média</span>"
+        yield_txt = f"O Dividend Yield de <b>{yield_target*100:.2f}%</b> compara com uma mediana de <b>{yield_peers*100:.2f}%</b> no grupo de pares ({yield_diff:+.2f} p.p.)"
+    else:
+        yield_badge, yield_txt = "<span class='badge badge-neutral'>N/A</span>", "Dividend Yield indisponível para comparação"
+
+    if pd.notna(debt_target) and pd.notna(debt_peers):
+        debt_badge = "<span class='badge badge-success'>Menos Alavancado</span>" if debt_target < debt_peers else "<span class='badge badge-warning'>Mais Alavancado</span>"
+        debt_txt = f"O rácio Net Debt/EBITDA de <b>{debt_target:.2f}x</b> compara com a mediana de <b>{debt_peers:.2f}x</b> dos concorrentes diretos"
+    else:
+        debt_badge, debt_txt = "<span class='badge badge-neutral'>N/A</span>", "Net Debt/EBITDA indisponível para comparação"
+
+    return f"""
+    <p>Em termos de valuation, o <b>{symbol}</b> {val_badge} — {val_txt}.</p>
+    <p>Ao nível dos dividendos, {yield_badge} — {yield_txt}.</p>
+    <p>Quanto à estrutura de capital, {debt_badge} — {debt_txt}.</p>
+    """
+
+
 # ------------------------------------------------------------------------------
 # 5. ESTILO CSS (idêntico ao original)
 # ------------------------------------------------------------------------------
@@ -431,6 +485,7 @@ if btn_executar:
         df_peers = pd.DataFrame(peers_data)
         html_peers = formatar_tabela_peers_pretty(df_peers)
         html_parecer = gerar_parecer(symbol, anos, hist)
+        html_apreciacao_peers = gerar_apreciacao_peers(symbol, df_peers)
 
         hero_html = f"""
         <div class='hero-header'>
@@ -452,7 +507,16 @@ if btn_executar:
         </div>
         """
 
-        body_html = f"<div class='reit-report-body'>{hero_html}{kpi_html}{parecer_card}{html_historico}{html_peers}</div>"
+        peer_appreciation_card = ""
+        if html_apreciacao_peers:
+            peer_appreciation_card = f"""
+            <div class='report-card'>
+                <div class='section-title'>Apreciação Relativa & Peer Benchmark</div>
+                {html_apreciacao_peers}
+            </div>
+            """
+
+        body_html = f"<div class='reit-report-body'>{hero_html}{kpi_html}{parecer_card}{html_historico}{html_peers}{peer_appreciation_card}</div>"
 
         doc_html = f"""
         <!DOCTYPE html>
@@ -468,13 +532,14 @@ if btn_executar:
             {parecer_card}
             {html_historico}
             {html_peers}
+            {peer_appreciation_card}
         </body>
         </html>
         """
 
         # Número de linhas de tabela aproximado, para dimensionar o iframe sem cortar conteúdo
         num_rows = sum(len(m) for m in hist.values()) + len(df_peers.index)
-        estimated_height = 1500 + num_rows * 42
+        estimated_height = 1650 + num_rows * 42
         components.html(doc_html, height=estimated_height, scrolling=True)
 
         st.download_button(
