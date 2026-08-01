@@ -1,15 +1,11 @@
 # ==============================================================================
 # 📑 DASHBOARD DE RÁCIOS FINANCEIROS & VALUATION — Aplicação Streamlit
-# Convertido a partir do notebook original (Colab, ipywidgets) para uma página
-# do hub Streamlit. O visual "Wall Street" (CSS customizado) foi mantido
-# integralmente, renderizado via st.markdown(unsafe_allow_html=True).
 # ==============================================================================
 
 import warnings
 warnings.filterwarnings("ignore")
 
 from datetime import datetime
-
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -22,7 +18,7 @@ st.set_page_config(
 )
 
 # ------------------------------------------------------------------------------
-# ESTILO CSS (idêntico ao original)
+# ESTILO CSS
 # ------------------------------------------------------------------------------
 STYLE_CSS = """
 <style>
@@ -106,12 +102,29 @@ STYLE_CSS = """
 """
 
 # ------------------------------------------------------------------------------
-# LÓGICA DE CÁLCULO (inalterada)
+# LÓGICA DE CÁLCULO SEGURA
 # ------------------------------------------------------------------------------
 def safe_div(num, denom):
-    if denom is None or num is None or denom == 0 or np.isnan(denom) or np.isnan(num):
+    try:
+        if denom is None or num is None or denom == 0 or np.isnan(denom) or np.isnan(num):
+            return np.nan
+        return float(num / denom)
+    except Exception:
         return np.nan
-    return num / denom
+
+
+def get_financial_row(df, possible_keys, column):
+    """Procura por várias chaves possíveis numa tabela do yfinance e devolve o primeiro valor escalar encontrado."""
+    if df is None or df.empty:
+        return np.nan
+    for key in possible_keys:
+        if key in df.index:
+            val = df.loc[key, column]
+            if isinstance(val, pd.Series):
+                val = val.iloc[0]
+            if pd.notna(val):
+                return float(val)
+    return np.nan
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -122,9 +135,9 @@ def fetch_financial_data(ticker_symbol):
     inc = ticker.financials
     cf = ticker.cashflow
     hist = ticker.history(period="5y")
-    info = ticker.info
+    info = ticker.info or {}
 
-    if bs.empty or inc.empty:
+    if bs is None or bs.empty or inc is None or inc.empty:
         raise ValueError(f"Não foram encontrados dados suficientes para o ticker: {ticker_symbol}")
 
     years = sorted(list(set(inc.columns).intersection(bs.columns)), reverse=True)[:5]
@@ -135,25 +148,26 @@ def fetch_financial_data(ticker_symbol):
     for yr in years:
         yr_str = str(yr.year) if hasattr(yr, "year") else str(yr)[:4]
 
-        tot_assets = bs.loc["Total Assets", yr] if "Total Assets" in bs.index else np.nan
-        tot_equity = bs.loc["Stockholders Equity", yr] if "Stockholders Equity" in bs.index else (
-            bs.loc["Total Equity Gross Minority Interest", yr] if "Total Equity Gross Minority Interest" in bs.index else np.nan
-        )
-        tot_debt = bs.loc["Total Debt", yr] if "Total Debt" in bs.index else np.nan
-        curr_assets = bs.loc["Current Assets", yr] if "Current Assets" in bs.index else np.nan
-        curr_liab = bs.loc["Current Liabilities", yr] if "Current Liabilities" in bs.index else np.nan
-        inventory = bs.loc["Inventory", yr] if "Inventory" in bs.index else 0
-        cash = bs.loc["Cash And Cash Equivalents", yr] if "Cash And Cash Equivalents" in bs.index else 0
+        tot_assets = get_financial_row(bs, ["Total Assets"], yr)
+        tot_equity = get_financial_row(bs, ["Stockholders Equity", "Total Equity Gross Minority Interest", "Common Stock Equity"], yr)
+        tot_debt = get_financial_row(bs, ["Total Debt", "Total Liabilities Net Minority Interest"], yr)
+        curr_assets = get_financial_row(bs, ["Current Assets"], yr)
+        curr_liab = get_financial_row(bs, ["Current Liabilities"], yr)
+        inventory = get_financial_row(bs, ["Inventory", "Inventories"], yr)
+        inventory = 0.0 if np.isnan(inventory) else inventory
+        cash = get_financial_row(bs, ["Cash And Cash Equivalents", "Cash Cash Equivalents And Short Term Investments"], yr)
+        cash = 0.0 if np.isnan(cash) else cash
 
-        rev = inc.loc["Total Revenue", yr] if "Total Revenue" in inc.index else np.nan
-        ebitda = inc.loc["EBITDA", yr] if "EBITDA" in inc.index else np.nan
-        ebit = inc.loc["EBIT", yr] if "EBIT" in inc.index else (inc.loc["Operating Income", yr] if "Operating Income" in inc.index else np.nan)
-        net_inc = inc.loc["Net Income", yr] if "Net Income" in inc.index else np.nan
-        eps = inc.loc["Diluted EPS", yr] if "Diluted EPS" in inc.index else (inc.loc["Basic EPS", yr] if "Basic EPS" in inc.index else np.nan)
-        interest_exp = abs(inc.loc["Interest Expense", yr]) if "Interest Expense" in inc.index else np.nan
+        rev = get_financial_row(inc, ["Total Revenue", "Operating Revenue"], yr)
+        ebitda = get_financial_row(inc, ["EBITDA", "Normalized EBITDA"], yr)
+        ebit = get_financial_row(inc, ["EBIT", "Operating Income"], yr)
+        net_inc = get_financial_row(inc, ["Net Income", "Net Income Common Stockholders"], yr)
+        eps = get_financial_row(inc, ["Diluted EPS", "Basic EPS"], yr)
+        interest_exp = abs(get_financial_row(inc, ["Interest Expense", "Interest Expense Non Operating"], yr))
 
-        fcf = cf.loc["Free Cash Flow", yr] if "Free Cash Flow" in cf.index else np.nan
-        div_paid = abs(cf.loc["Cash Dividends Paid", yr]) if "Cash Dividends Paid" in cf.index else 0
+        fcf = get_financial_row(cf, ["Free Cash Flow"], yr) if cf is not None else np.nan
+        div_paid = abs(get_financial_row(cf, ["Cash Dividends Paid"], yr)) if cf is not None else 0.0
+        div_paid = 0.0 if np.isnan(div_paid) else div_paid
 
         data[yr_str] = {
             "Revenue": rev, "EBITDA": ebitda, "EBIT": ebit, "Net Income": net_inc, "EPS": eps, "FCF": fcf, "Dividends": div_paid,
@@ -187,11 +201,17 @@ def fetch_financial_data(ticker_symbol):
 
     shares_out = info.get("sharesOutstanding", np.nan)
     val_data = {}
+    
+    # Tratamento seguro de histórico e timezone
+    if not hist.empty:
+        hist_index_years = hist.index.year
+
     for yr_str in df_hist.columns:
         try:
-            p = hist.loc[hist.index.year == int(yr_str)]["Close"].iloc[-1]
-            mcap = p * shares_out if shares_out else np.nan
-            ev = mcap + df_hist.loc["Total Debt", yr_str] - df_hist.loc["Cash", yr_str] if mcap else np.nan
+            matched_prices = hist.loc[hist_index_years == int(yr_str)]["Close"]
+            p = float(matched_prices.iloc[-1]) if not matched_prices.empty else np.nan
+            mcap = p * shares_out if pd.notna(p) and pd.notna(shares_out) else np.nan
+            ev = mcap + df_hist.loc["Total Debt", yr_str] - df_hist.loc["Cash", yr_str] if pd.notna(mcap) else np.nan
         except Exception:
             p, mcap, ev = np.nan, np.nan, np.nan
 
@@ -205,17 +225,19 @@ def fetch_financial_data(ticker_symbol):
         }
     df_val = pd.DataFrame(val_data)
 
-    daily_returns = hist["Close"].pct_change().dropna()
-    beta = info.get("beta", np.nan)
-    volatility = daily_returns.std() * np.sqrt(252)
-    cumulative = (1 + daily_returns).cumprod()
-    peak = cumulative.cummax()
-    drawdown = (cumulative - peak) / peak
-    max_drawdown = drawdown.min()
-
-    rf = 0.04
-    ann_return = daily_returns.mean() * 252
-    sharpe = safe_div(ann_return - rf, volatility)
+    if not hist.empty and len(hist) > 1:
+        daily_returns = hist["Close"].pct_change().dropna()
+        beta = info.get("beta", np.nan)
+        volatility = daily_returns.std() * np.sqrt(252)
+        cumulative = (1 + daily_returns).cumprod()
+        peak = cumulative.cummax()
+        drawdown = (cumulative - peak) / peak
+        max_drawdown = drawdown.min()
+        rf = 0.04
+        ann_return = daily_returns.mean() * 252
+        sharpe = safe_div(ann_return - rf, volatility)
+    else:
+        beta, volatility, max_drawdown, sharpe = np.nan, np.nan, np.nan, np.nan
 
     df_market = pd.DataFrame(
         {
@@ -263,16 +285,17 @@ def fetch_peer_benchmark(ticker_symbol, sector):
 
     for tk in all_tickers:
         t = yf.Ticker(tk)
-        inf = t.info
+        inf = t.info or {}
         bs = t.balance_sheet
         inc = t.financials
 
         try:
-            net_inc = inc.loc["Net Income"].iloc[0] if "Net Income" in inc.index else np.nan
-            rev = inc.loc["Total Revenue"].iloc[0] if "Total Revenue" in inc.index else np.nan
-            ebitda = inc.loc["EBITDA"].iloc[0] if "EBITDA" in inc.index else np.nan
-            tot_equity = bs.loc["Stockholders Equity"].iloc[0] if "Stockholders Equity" in bs.index else np.nan
-            tot_debt = bs.loc["Total Debt"].iloc[0] if "Total Debt" in bs.index else np.nan
+            yr = inc.columns[0] if inc is not None and not inc.empty else None
+            net_inc = get_financial_row(inc, ["Net Income"], yr)
+            rev = get_financial_row(inc, ["Total Revenue"], yr)
+            ebitda = get_financial_row(inc, ["EBITDA"], yr)
+            tot_equity = get_financial_row(bs, ["Stockholders Equity", "Total Equity Gross Minority Interest"], yr)
+            tot_debt = get_financial_row(bs, ["Total Debt"], yr)
 
             comp_data[tk] = {
                 "P/E": inf.get("trailingPE", np.nan),
@@ -293,15 +316,15 @@ def fetch_peer_benchmark(ticker_symbol, sector):
 
 
 def generate_peer_appreciation(ticker_symbol, df_comp):
-    if ticker_symbol not in df_comp.columns:
+    if ticker_symbol not in df_comp.columns or df_comp.shape[1] < 2:
         return "Dados insuficientes para gerar a análise comparativa automatizada."
 
     target = df_comp[ticker_symbol]
     peers_median = df_comp.drop(columns=[ticker_symbol]).median(axis=1)
 
-    pe_rel = safe_div(target["P/E"], peers_median["P/E"]) - 1
-    roe_diff = (target["ROE"] - peers_median["ROE"]) * 100
-    margin_diff = (target["EBITDA Margin"] - peers_median["EBITDA Margin"]) * 100
+    pe_rel = safe_div(target.get("P/E"), peers_median.get("P/E")) - 1
+    roe_diff = (target.get("ROE", 0) - peers_median.get("ROE", 0)) * 100
+    margin_diff = (target.get("EBITDA Margin", 0) - peers_median.get("EBITDA Margin", 0)) * 100
 
     valuation_str = (
         "<span style='color:#059669; font-weight:600;'>Subvalorizada</span>" if pe_rel < -0.05 else
@@ -317,11 +340,11 @@ def generate_peer_appreciation(ticker_symbol, df_comp):
     text = f"""
     <h3>Apreciação Relativa & Valuation (Perspetiva de Quant/Hedge Fund)</h3>
     <p>A <strong>{ticker_symbol}</strong> demonstra uma eficiência operacional <strong>{operational_str}</strong> relativamente aos pares diretos do setor.
-    O retorno sobre o capital próprio (ROE) fixa-se nos <strong>{target['ROE']*100:.2f}%</strong> (face à mediana dos concorrentes de {peers_median['ROE']*100:.2f}%), enquanto a margem EBITDA atinge <strong>{target['EBITDA Margin']*100:.2f}%</strong> (vs. {peers_median['EBITDA Margin']*100:.2f}% do grupo de referência).</p>
+    O retorno sobre o capital próprio (ROE) fixa-se nos <strong>{target.get('ROE', 0)*100:.2f}%</strong> (face à mediana dos concorrentes de {peers_median.get('ROE', 0)*100:.2f}%), enquanto a margem EBITDA atinge <strong>{target.get('EBITDA Margin', 0)*100:.2f}%</strong> (vs. {peers_median.get('EBITDA Margin', 0)*100:.2f}% do grupo de referência).</p>
 
-    <p>Em termos de avaliação de mercado, a ação é negociada a um múltiplo P/E de <strong>{target['P/E']:.2f}x</strong> e EV/EBITDA de <strong>{target['EV/EBITDA']:.2f}x</strong>.
+    <p>Em termos de avaliação de mercado, a ação é negociada a um múltiplo P/E de <strong>{target.get('P/E', 0):.2f}x</strong> e EV/EBITDA de <strong>{target.get('EV/EBITDA', 0):.2f}x</strong>.
     Frente à mediana dos seus concorrentes diretos, a empresa apresenta-se <strong>{valuation_str}</strong> (múltiplo P/E com variação de <strong>{pe_rel*100:+.2f}%</strong> face aos pares).
-    A alavancagem financeira fixa-se num rácio Debt/Equity de <strong>{target['Debt/Equity']:.2f}x</strong> (comparado com {peers_median['Debt/Equity']:.2f}x dos concorrentes).</p>
+    A alavancagem financeira fixa-se num rácio Debt/Equity de <strong>{target.get('Debt/Equity', 0):.2f}x</strong> (comparado com {peers_median.get('Debt/Equity', 0):.2f}x dos concorrentes).</p>
     """
     return text
 
@@ -331,13 +354,15 @@ def format_df_to_html(df):
     for col in df_formatted.columns:
         for idx in df_formatted.index:
             val = df_formatted.loc[idx, col]
+            if isinstance(val, pd.Series):
+                val = val.iloc[0]
             if pd.isna(val) or val is None:
                 df_formatted.loc[idx, col] = "<span style='color:#94a3b8;'>—</span>"
-            elif "Growth" in idx or "ROA" in idx or "ROE" in idx or "ROIC" in idx or "Margin" in idx or "Volatilidade" in idx or "Drawdown" in idx:
+            elif any(k in str(idx) for k in ["Growth", "ROA", "ROE", "ROIC", "Margin", "Volatilidade", "Drawdown"]):
                 color = "#059669" if val > 0 else ("#dc2626" if val < 0 else "#334155")
                 df_formatted.loc[idx, col] = f"<span style='color:{color}; font-weight:500;'>{val * 100:.2f}%</span>"
             else:
-                df_formatted.loc[idx, col] = f"{val:.2f}x" if "Ratio" not in idx and "Sharpe" not in idx and "Beta" not in idx else f"{val:.2f}"
+                df_formatted.loc[idx, col] = f"{val:.2f}x" if "Ratio" not in str(idx) and "Sharpe" not in str(idx) and "Beta" not in str(idx) else f"{val:.2f}"
 
     table_html = df_formatted.to_html(classes="finance-table", escape=False)
     return f"<div class='table-wrapper'>{table_html}</div>"
@@ -354,8 +379,10 @@ with st.sidebar:
     ticker_input = st.text_input("Ticker", value="AAPL")
     analyze_button = st.button("📊 Gerar Relatório Premium", type="primary", use_container_width=True)
 
-if analyze_button:
-    symbol = ticker_input.strip().upper()
+if analyze_button or "current_symbol" in st.session_state:
+    symbol = ticker_input.strip().upper() if analyze_button else st.session_state.get("current_symbol", "AAPL")
+    st.session_state["current_symbol"] = symbol
+
     with st.spinner(f"⚡ A extrair demonstrações financeiras e a recalcular indicadores para {symbol}..."):
         try:
             data = fetch_financial_data(symbol)
