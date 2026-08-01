@@ -103,6 +103,18 @@ STYLE_CSS = """
         box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
     }
     .analysis-card h3 { margin-top: 0; color: #0f172a; font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+    .analysis-card p { margin: 0 0 12px 0; }
+    .analysis-card p:last-child { margin-bottom: 0; }
+
+    .badge {
+        display: inline-block; padding: 4px 10px; border-radius: 9999px;
+        font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+    }
+    .badge-success { background: #dcfce7; color: #166534; }
+    .badge-warning { background: #fef3c7; color: #92400e; }
+    .badge-danger { background: #fee2e2; color: #991b1b; }
+    .badge-info { background: #dbeafe; color: #1e40af; }
+    .badge-neutral { background: #f1f5f9; color: #475569; }
 </style>
 """
 
@@ -297,32 +309,55 @@ def generate_peer_appreciation(ticker_symbol, df_comp):
     if ticker_symbol not in df_comp.columns:
         return "Dados insuficientes para gerar a análise comparativa automatizada."
 
+    peers_only = df_comp.drop(columns=[ticker_symbol])
+    if peers_only.empty:
+        return "Sem concorrentes válidos para comparação."
+
     target = df_comp[ticker_symbol]
-    peers_median = df_comp.drop(columns=[ticker_symbol]).median(axis=1)
+    peers_median = peers_only.median(axis=1)
 
-    pe_rel = safe_div(target["P/E"], peers_median["P/E"]) - 1
-    roe_diff = (target["ROE"] - peers_median["ROE"]) * 100
-    margin_diff = (target["EBITDA Margin"] - peers_median["EBITDA Margin"]) * 100
+    pe_rel = safe_div(target["P/E"], peers_median["P/E"])
+    pe_rel = pe_rel - 1 if pd.notna(pe_rel) else np.nan
 
-    valuation_str = (
-        "<span style='color:#059669; font-weight:600;'>Subvalorizada</span>" if pe_rel < -0.05 else
-        ("<span style='color:#dc2626; font-weight:600;'>Sobrevalorizada</span>" if pe_rel > 0.05 else
-         "<span style='color:#2563eb; font-weight:600;'>Em linha com o mercado</span>")
-    )
-    operational_str = (
-        "<span style='color:#059669; font-weight:600;'>Superior</span>" if roe_diff > 0 and margin_diff > 0 else
-        ("<span style='color:#dc2626; font-weight:600;'>Inferior</span>" if roe_diff < 0 and margin_diff < 0 else
-         "<span style='color:#d97706; font-weight:600;'>Mista</span>")
-    )
+    roe_target, roe_peers = target.get("ROE"), peers_median.get("ROE")
+    margin_target, margin_peers = target.get("EBITDA Margin"), peers_median.get("EBITDA Margin")
+    debt_target, debt_peers = target.get("Debt/Equity"), peers_median.get("Debt/Equity")
+
+    # --- Valuation (P/E vs. mediana dos pares) ---
+    if pd.notna(pe_rel):
+        if pe_rel < -0.05:
+            val_badge = "<span class='badge badge-success'>Desconto vs. Pares</span>"
+        elif pe_rel > 0.05:
+            val_badge = "<span class='badge badge-warning'>Prémio vs. Pares</span>"
+        else:
+            val_badge = "<span class='badge badge-info'>Em Linha com os Pares</span>"
+        val_txt = f"negoceia a um múltiplo <b>P/E de {target['P/E']:.2f}x</b>, uma variação de <b>{pe_rel*100:+.1f}%</b> face à mediana dos concorrentes ({peers_median['P/E']:.2f}x)"
+    else:
+        val_badge, val_txt = "<span class='badge badge-neutral'>N/A</span>", "não tem dados suficientes para comparar o múltiplo P/E com os concorrentes"
+
+    # --- Rentabilidade (ROE e Margem EBITDA vs. mediana dos pares) ---
+    if pd.notna(roe_target) and pd.notna(roe_peers) and pd.notna(margin_target) and pd.notna(margin_peers):
+        if roe_target > roe_peers and margin_target > margin_peers:
+            rent_badge = "<span class='badge badge-success'>Acima da Média</span>"
+        elif roe_target < roe_peers and margin_target < margin_peers:
+            rent_badge = "<span class='badge badge-danger'>Abaixo da Média</span>"
+        else:
+            rent_badge = "<span class='badge badge-warning'>Mista</span>"
+        rent_txt = f"o ROE de <b>{roe_target*100:.2f}%</b> compara com uma mediana de <b>{roe_peers*100:.2f}%</b>, e a margem EBITDA de <b>{margin_target*100:.2f}%</b> compara com <b>{margin_peers*100:.2f}%</b> no grupo de pares"
+    else:
+        rent_badge, rent_txt = "<span class='badge badge-neutral'>N/A</span>", "dados de rentabilidade insuficientes para comparação"
+
+    # --- Alavancagem (Debt/Equity vs. mediana dos pares) ---
+    if pd.notna(debt_target) and pd.notna(debt_peers):
+        debt_badge = "<span class='badge badge-success'>Menos Alavancado</span>" if debt_target < debt_peers else "<span class='badge badge-warning'>Mais Alavancado</span>"
+        debt_txt = f"o rácio Debt/Equity de <b>{debt_target:.2f}x</b> compara com a mediana de <b>{debt_peers:.2f}x</b> dos concorrentes diretos"
+    else:
+        debt_badge, debt_txt = "<span class='badge badge-neutral'>N/A</span>", "Debt/Equity indisponível para comparação"
 
     text = f"""
-    <h3>Apreciação Relativa & Valuation (Perspetiva de Quant/Hedge Fund)</h3>
-    <p>A <strong>{ticker_symbol}</strong> demonstra uma eficiência operacional <strong>{operational_str}</strong> relativamente aos pares diretos do setor.
-    O retorno sobre o capital próprio (ROE) fixa-se nos <strong>{target['ROE']*100:.2f}%</strong> (face à mediana dos concorrentes de {peers_median['ROE']*100:.2f}%), enquanto a margem EBITDA atinge <strong>{target['EBITDA Margin']*100:.2f}%</strong> (vs. {peers_median['EBITDA Margin']*100:.2f}% do grupo de referência).</p>
-
-    <p>Em termos de avaliação de mercado, a ação é negociada a um múltiplo P/E de <strong>{target['P/E']:.2f}x</strong> e EV/EBITDA de <strong>{target['EV/EBITDA']:.2f}x</strong>.
-    Frente à mediana dos seus concorrentes diretos, a empresa apresenta-se <strong>{valuation_str}</strong> (múltiplo P/E com variação de <strong>{pe_rel*100:+.2f}%</strong> face aos pares).
-    A alavancagem financeira fixa-se num rácio Debt/Equity de <strong>{target['Debt/Equity']:.2f}x</strong> (comparado com {peers_median['Debt/Equity']:.2f}x dos concorrentes).</p>
+    <p>Em termos de valuation, a <b>{ticker_symbol}</b> {val_badge} — {val_txt}.</p>
+    <p>Ao nível da rentabilidade, {rent_badge} face aos pares diretos — {rent_txt}.</p>
+    <p>Quanto à estrutura de capital, {debt_badge} — {debt_txt}.</p>
     """
     return text
 
