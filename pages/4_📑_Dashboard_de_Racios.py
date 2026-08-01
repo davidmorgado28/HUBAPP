@@ -128,7 +128,7 @@ def fetch_financial_data(ticker_symbol):
     if bs.empty or inc.empty:
         raise ValueError(f"Não foram encontrados dados suficientes para o ticker: {ticker_symbol}")
 
-    years = sorted(list(set(inc.columns).intersection(bs.columns)), reverse=True)[:5]
+    years = sorted(list(set(inc.columns) & set(bs.columns) & set(cf.columns)), reverse=True)[:5]
     if len(years) < 2:
         raise ValueError("Histórico de dados financeiros insuficiente (mínimo 2 anos necessários).")
 
