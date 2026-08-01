@@ -202,7 +202,6 @@ def fetch_financial_data(ticker_symbol):
     shares_out = info.get("sharesOutstanding", np.nan)
     val_data = {}
     
-    # Tratamento seguro de histórico e timezone
     if not hist.empty:
         hist_index_years = hist.index.year
 
@@ -350,7 +349,9 @@ def generate_peer_appreciation(ticker_symbol, df_comp):
 
 
 def format_df_to_html(df):
-    df_formatted = df.copy()
+    """Converte o DataFrame para object antes de formatar os valores para evitar erro de dtype (ex: float64)."""
+    df_formatted = df.astype(object)
+    
     for col in df_formatted.columns:
         for idx in df_formatted.index:
             val = df_formatted.loc[idx, col]
