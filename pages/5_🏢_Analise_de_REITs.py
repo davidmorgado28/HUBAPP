@@ -345,9 +345,11 @@ def formatar_tabela_historica_pretty(anos, dados):
                     if any(kw in metrica for kw in ["Margin", "Yield", "Ratio", "Growth", "Drawdown", "Volatilidade"]):
                         cols.append(f"<td style='text-align: center;'><b>{v * 100:.2f}%</b></td>" if pd.notna(v) else "<td style='text-align: center; color: #94a3b8;'>—</td>")
                     elif any(kw in metrica for kw in ["Price", "Coverage", "Beta", "Sharpe", "Debt"]):
-                        cols.append(
-                            f"<td style='text-align: center;'>{v:.2f}x</td>" if "Price" in metrica or "Debt" in metrica or "Coverage" in metrica else f"<td style='text-align: center;'>{v:.2f}</td>"
-                        ) if pd.notna(v) else cols.append("<td style='text-align: center; color: #94a3b8;'>—</td>")
+                        if pd.notna(v):
+                            suffix = "x" if ("Price" in metrica or "Debt" in metrica or "Coverage" in metrica) else ""
+                            cols.append(f"<td style='text-align: center;'>{v:.2f}{suffix}</td>")
+                        else:
+                            cols.append("<td style='text-align: center; color: #94a3b8;'>—</td>")
                     else:
                         cols.append(f"<td style='text-align: center;'>{v:.2f}</td>" if pd.notna(v) else "<td style='text-align: center; color: #94a3b8;'>—</td>")
                 else:
