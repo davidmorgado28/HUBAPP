@@ -238,25 +238,27 @@ st.markdown(
         <div class="app-card">
             <div class="app-icon">📊</div>
             <div class="app-name">Simulador de Portefólio vs S&amp;P 500</div>
-            <div class="app-desc">Compara a performance do teu portefólio com o índice S&amp;P 500.</div>
+            <div class="app-desc">Compara a performance do teu portefólio com o índice S&amp;P 500, com investimento inicial + DCA mensal.</div>
         </div>
         <div class="app-card">
-            <div class="app-icon">🧮</div>
-            <div class="app-name">App 2</div>
-            <div class="app-desc">Substituir por título e descrição reais.</div>
-            <div class="badge-soon">Em breve</div>
+            <div class="app-icon">📈</div>
+            <div class="app-name">Otimizador de Markowitz</div>
+            <div class="app-desc">Otimiza os pesos do portefólio pela Fronteira de Eficiência (maximização do Índice de Sharpe).</div>
         </div>
         <div class="app-card">
-            <div class="app-icon">🧮</div>
-            <div class="app-name">App 3</div>
-            <div class="app-desc">Substituir por título e descrição reais.</div>
-            <div class="badge-soon">Em breve</div>
+            <div class="app-icon">💰</div>
+            <div class="app-name">Modelo DCF</div>
+            <div class="app-desc">Valuação por Discounted Cash Flow em 3 cenários, com WACC calculado dinamicamente.</div>
         </div>
         <div class="app-card">
-            <div class="app-icon">🧮</div>
-            <div class="app-name">App 4</div>
-            <div class="app-desc">Substituir por título e descrição reais.</div>
-            <div class="badge-soon">Em breve</div>
+            <div class="app-icon">📑</div>
+            <div class="app-name">Dashboard de Rácios & Valuation</div>
+            <div class="app-desc">Relatório estilo Wall Street: valuation, rentabilidade, alavancagem, liquidez e benchmark de pares.</div>
+        </div>
+        <div class="app-card">
+            <div class="app-icon">🏢</div>
+            <div class="app-name">Análise de REITs</div>
+            <div class="app-desc">Análise executiva de REITs: FFO/AFFO, dividendos, alavancagem e comparação com concorrentes.</div>
         </div>
     </div>
     """,
