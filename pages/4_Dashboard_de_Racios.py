@@ -327,7 +327,7 @@ def generate_peer_appreciation(ticker_symbol, df_comp):
 
 
 def format_df_to_html(df):
-    df_formatted = df.copy()
+    df_formatted = df.astype(object)
     for col in df_formatted.columns:
         for idx in df_formatted.index:
             val = df_formatted.loc[idx, col]
