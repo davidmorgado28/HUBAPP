@@ -246,6 +246,11 @@ st.markdown(
             <div class="app-desc">Otimiza os pesos do portefólio pela Fronteira de Eficiência (maximização do Índice de Sharpe).</div>
         </div>
         <div class="app-card">
+            <div class="app-icon">🎲</div>
+            <div class="app-name">Simulador de Monte Carlo</div>
+            <div class="app-desc">Projeta milhares de cenários futuros do teu portefólio (com aportes mensais) e devolve retorno esperado, risco, probabilidade de perda e drawdown.</div>
+        </div>
+        <div class="app-card">
             <div class="app-icon">💰</div>
             <div class="app-name">Modelo DCF</div>
             <div class="app-desc">Valuação por Discounted Cash Flow em 3 cenários, com WACC calculado dinamicamente.</div>
