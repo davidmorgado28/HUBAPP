@@ -218,8 +218,8 @@ st.markdown(
         <div class="hero-subtitle">Hub de Aplicações</div>
         <div class="hero-divider"></div>
         <div class="hero-tagline">
-            Um espaço centralizado para as ferramentas de análise e simulação financeira
-            da Luminara Capital. Usa o menu na barra lateral para navegar entre aplicações,
+            Um espaço centralizado de ferramentas de análise e simulação financeira. 
+            Usa o menu na barra lateral para navegar entre aplicações,
             cada uma a correr de forma independente.
         </div>
     </div>
