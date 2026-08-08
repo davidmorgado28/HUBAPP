@@ -141,7 +141,6 @@ edited_df = st.data_editor(
     },
     key="mc_portfolio_editor",
 )
-st.session_state.mc_portfolio = edited_df
 
 clean_df = edited_df.dropna(subset=["Ticker"])
 clean_df = clean_df[clean_df["Ticker"].str.strip() != ""]
