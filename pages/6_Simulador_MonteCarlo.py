@@ -271,6 +271,13 @@ def build_html_report(res, metrics, params, figs) -> str:
         for t, w in zip(res["valid_tickers"], res["valid_weights"])
     )
 
+    prob_table_rows_html = "".join(
+        f"<tr><td>{row['Probabilidade de atingir este valor ou mais']}</td>"
+        f"<td>{fmt_eur(row['Valor Final da Carteira'])}</td>"
+        f"<td>{'+' if row['Rendimento vs. Capital Investido'] >= 0 else ''}{fmt_eur(row['Rendimento vs. Capital Investido'])}</td></tr>"
+        for row in params["prob_table_rows"]
+    )
+
     return f"""<!DOCTYPE html>
 <html lang="pt">
 <head>
@@ -298,7 +305,7 @@ def build_html_report(res, metrics, params, figs) -> str:
         background: rgba(212,175,55,0.08); border: 1px solid rgba(212,175,55,0.3);
         border-radius: 8px; padding: 0.35rem 0.7rem; font-size: 0.88rem; color: {GOLD_100};
     }}
-    table {{ border-collapse: collapse; width: 100%; max-width: 420px; margin-bottom: 1rem; }}
+    table {{ border-collapse: collapse; width: 100%; max-width: 640px; margin-bottom: 1rem; }}
     th, td {{ text-align: left; padding: 0.4rem 0.7rem; border-bottom: 1px solid rgba(212,175,55,0.18); font-size: 0.9rem; }}
     th {{ color: {GOLD_300}; font-weight: 600; }}
     .metrics-grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.8rem; margin: 1rem 0 2rem 0; }}
@@ -338,6 +345,13 @@ def build_html_report(res, metrics, params, figs) -> str:
 
     <h2>Resultados</h2>
     <div class="metrics-grid">{metric_cards}</div>
+
+    <h2>Probabilidade de Atingir Cada Valor</h2>
+    <table>
+        <tr><th>Probabilidade</th><th>Valor Final da Carteira</th><th>Ganho/Perda vs. Investido</th></tr>
+        {prob_table_rows_html}
+    </table>
+    <p class="subtitle" style="margin-top:-0.4rem;">Total investido ao longo do horizonte: {fmt_eur(params['total_invested'])}</p>
 
     <h2>Evolução Projetada da Carteira</h2>
     <div class="chart-box">{fan_div}</div>
@@ -435,6 +449,47 @@ if res is not None:
     )
 
     st.caption(f"Intervalo de confiança 90% do valor final: €{p5:,.0f} — €{p95:,.0f}")
+
+    # ======================================================================
+    # Tabela de probabilidade: valor final vs. probabilidade de o atingir
+    # ======================================================================
+    st.markdown("#### Probabilidade de Atingir Cada Valor")
+    st.caption(
+        "Para cada valor, a probabilidade de a carteira terminar com **esse valor ou mais** "
+        "no fim do horizonte definido."
+    )
+
+    prob_levels = [95, 90, 75, 50, 25, 10, 5]  # % de simulações que atingiram este valor ou mais
+    prob_table_rows = []
+    for level in prob_levels:
+        # nível "atingir X ou mais" com prob. = level% corresponde ao percentil (100 - level)
+        value_at_level = np.percentile(final_values, 100 - level)
+        prob_table_rows.append({
+            "Probabilidade de atingir este valor ou mais": f"{level}%",
+            "Valor Final da Carteira": value_at_level,
+            "Rendimento vs. Capital Investido": value_at_level - total_invested,
+        })
+
+    prob_df = pd.DataFrame(prob_table_rows)
+
+    st.dataframe(
+        prob_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Probabilidade de atingir este valor ou mais": st.column_config.TextColumn(
+                "Probabilidade", help="Ex: '90%' significa que 90% das simulações terminaram com este valor ou mais."
+            ),
+            "Valor Final da Carteira": st.column_config.NumberColumn(
+                "Valor Final da Carteira", format="€ %.0f",
+            ),
+            "Rendimento vs. Capital Investido": st.column_config.NumberColumn(
+                "Ganho/Perda vs. Investido", format="€ %+.0f",
+                help="Diferença entre o valor final e o total que investiste (inicial + aportes mensais).",
+            ),
+        },
+    )
+    st.caption(f"Total investido ao longo do horizonte: €{total_invested:,.0f}")
 
     # ======================================================================
     # Construção dos gráficos (feita antes de os mostrar, para poderem
@@ -563,6 +618,8 @@ if res is not None:
             "n_simulations": int(n_simulations),
             "method": method,
             "n_months": n_months,
+            "total_invested": total_invested,
+            "prob_table_rows": prob_table_rows,
         },
         figs={"fan": fig_fan, "hist": fig_hist, "dd": fig_dd, "pie": fig_pie},
     )
