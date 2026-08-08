@@ -1,10 +1,11 @@
 # ==============================================================================
-# 📊 SIMULADOR DE PORTEFÓLIO vs S&P 500 — Aplicação Streamlit
+# 📊 SIMULADOR DE PORTEFÓLIO vs BENCHMARK — Aplicação Streamlit
 # Convertido a partir do notebook original (Colab) para uma app de ambiente
 # de trabalho, com interface web local.
 #
-# ATUALIZAÇÃO: adiciona Stress Test (piores quedas históricas), diversificação
-# setorial e geográfica, e tabela cruzada Cap Size x Estilo (Value/Growth/Core).
+# ATUALIZAÇÃO: benchmark selecionável (S&P 500, NASDAQ, Dow, PSI, DAX, CAC,
+# FTSE, IBEX, etc. ou ticker personalizado), Stress Test, diversificação
+# setorial/geográfica, e tabela cruzada Cap Size x Estilo.
 # ==============================================================================
 
 import sys
@@ -23,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from theme import inject_theme, page_header, style_plotly
 
 st.set_page_config(
-    page_title="Simulador de Portefólio vs S&P 500",
+    page_title="Simulador de Portefólio vs Benchmark",
     page_icon="📊",
     layout="wide",
 )
@@ -35,6 +36,30 @@ LUMINARA_PALETTE = [
     "#d4af37", "#8fb3d9", "#7fd9a8", "#f6e7c1", "#b8912e",
     "#4a5a8f", "#c9a876", "#5c6b8a", "#e8c874", "#6f8fae",
 ]
+
+# ------------------------------------------------------------------------------
+# BENCHMARKS DISPONÍVEIS
+# Tickers de índice conforme Yahoo Finance / yfinance. Alguns índices europeus
+# mais pequenos (ex. PSI) têm por vezes histórico mais curto ou lacunas —
+# usa a opção "Personalizado" se o ticker predefinido não funcionar bem.
+# ------------------------------------------------------------------------------
+BENCHMARK_OPTIONS = {
+    "S&P 500 (EUA)": "^GSPC",
+    "Nasdaq Composite (EUA)": "^IXIC",
+    "Dow Jones Industrial Average (EUA)": "^DJI",
+    "Russell 2000 (EUA, small caps)": "^RUT",
+    "PSI (Portugal)": "^PSI20",
+    "IBEX 35 (Espanha)": "^IBEX",
+    "CAC 40 (França)": "^FCHI",
+    "DAX (Alemanha)": "^GDAXI",
+    "FTSE 100 (Reino Unido)": "^FTSE",
+    "EURO STOXX 50 (Zona Euro)": "^STOXX50E",
+    "FTSE MIB (Itália)": "FTSEMIB.MI",
+    "Nikkei 225 (Japão)": "^N225",
+    "Hang Seng (Hong Kong)": "^HSI",
+    "MSCI Emerging Markets (ETF EEM)": "EEM",
+    "Personalizado (indicar ticker Yahoo Finance)": None,
+}
 
 # ------------------------------------------------------------------------------
 # EVENTOS MACRO CONHECIDOS (para contextualizar os piores drawdowns)
@@ -222,9 +247,9 @@ def match_known_event(trough_date):
     return "Correção de mercado (sem evento macro específico identificado)"
 
 
-def build_stress_test_table(df_results, top_n=5):
+def build_stress_test_table(df_results, benchmark_label, top_n=5):
     port_series = df_results["Portfolio"]
-    bench_series = df_results["SP500"]
+    bench_series = df_results["Benchmark"]
 
     episodes = get_drawdown_episodes(port_series, top_n=top_n)
     if not episodes:
@@ -241,7 +266,7 @@ def build_stress_test_table(df_results, top_n=5):
         else:
             recovery_str = "Ainda em recuperação"
 
-        # Queda do S&P 500 na mesma janela, para comparação
+        # Queda do benchmark na mesma janela, para comparação
         try:
             bench_window = bench_series.loc[peak_date:trough_date]
             bench_dd = (bench_window.min() - bench_window.iloc[0]) / bench_window.iloc[0]
@@ -252,7 +277,7 @@ def build_stress_test_table(df_results, top_n=5):
             "Período (Pico → Vale)": f"{peak_date.strftime('%d/%m/%Y')} → {trough_date.strftime('%d/%m/%Y')}",
             "Duração da Queda": f"{duration_days} dias",
             "Queda Máxima — Portefólio": f"{ep['drawdown_pct'] * 100:.2f}%",
-            "Queda Máxima — S&P 500": f"{bench_dd * 100:.2f}%" if not np.isnan(bench_dd) else "N/D",
+            f"Queda Máxima — {benchmark_label}": f"{bench_dd * 100:.2f}%" if not np.isnan(bench_dd) else "N/D",
             "Tempo até Recuperação": recovery_str,
             "Evento Provável": match_known_event(trough_date),
         })
@@ -260,15 +285,21 @@ def build_stress_test_table(df_results, top_n=5):
     return pd.DataFrame(rows)
 
 
-def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dca):
-    benchmark_ticker = "^GSPC"
+def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dca, benchmark_ticker, benchmark_label):
     all_tickers = list(dict.fromkeys(tickers + [benchmark_ticker]))
 
     raw_close, adj_close = download_prices(all_tickers, start_date)
 
     missing_tickers = [t for t in all_tickers if t not in raw_close.columns]
     if missing_tickers:
-        st.error(f"❌ Não foram encontrados dados para o(s) ticker(s): {', '.join(missing_tickers)}")
+        if benchmark_ticker in missing_tickers:
+            st.error(
+                f"❌ Não foram encontrados dados para o benchmark '{benchmark_ticker}'. "
+                "Confirma o ticker no Yahoo Finance (finance.yahoo.com) e usa a opção "
+                "'Personalizado' na barra lateral se necessário."
+            )
+        else:
+            st.error(f"❌ Não foram encontrados dados para o(s) ticker(s): {', '.join(missing_tickers)}")
         return None
 
     if raw_close.empty or len(raw_close) < 2:
@@ -329,16 +360,16 @@ def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dc
     df_results = pd.DataFrame(
         {
             "Portfolio": port_values,
-            "SP500": bench_values,
+            "Benchmark": bench_values,
             "Portfolio_NoDiv": port_values_raw,
-            "SP500_NoDiv": bench_values_raw,
+            "Benchmark_NoDiv": bench_values_raw,
             "Invested": total_invested_series,
         },
         index=dates,
     )
 
     div_est_port = max(0.0, df_results["Portfolio"].iloc[-1] - df_results["Portfolio_NoDiv"].iloc[-1])
-    div_est_bench = max(0.0, df_results["SP500"].iloc[-1] - df_results["SP500_NoDiv"].iloc[-1])
+    div_est_bench = max(0.0, df_results["Benchmark"].iloc[-1] - df_results["Benchmark_NoDiv"].iloc[-1])
     div_yield_port = (div_est_port / df_results["Invested"].iloc[-1]) * 100
     div_yield_bench = (div_est_bench / df_results["Invested"].iloc[-1]) * 100
 
@@ -346,14 +377,14 @@ def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dc
     trading_days = 252
 
     port_daily_ret = df_results["Portfolio"].pct_change().dropna()
-    bench_daily_ret = df_results["SP500"].pct_change().dropna()
+    bench_daily_ret = df_results["Benchmark"].pct_change().dropna()
 
     total_ret_port = (df_results["Portfolio"].iloc[-1] - df_results["Invested"].iloc[-1]) / df_results["Invested"].iloc[-1]
-    total_ret_bench = (df_results["SP500"].iloc[-1] - df_results["Invested"].iloc[-1]) / df_results["Invested"].iloc[-1]
+    total_ret_bench = (df_results["Benchmark"].iloc[-1] - df_results["Invested"].iloc[-1]) / df_results["Invested"].iloc[-1]
 
     n_years = (dates[-1] - dates[0]).days / 365.25
     cagr_port = (df_results["Portfolio"].iloc[-1] / df_results["Invested"].iloc[-1]) ** (1 / max(n_years, 0.1)) - 1
-    cagr_bench = (df_results["SP500"].iloc[-1] / df_results["Invested"].iloc[-1]) ** (1 / max(n_years, 0.1)) - 1
+    cagr_bench = (df_results["Benchmark"].iloc[-1] / df_results["Invested"].iloc[-1]) ** (1 / max(n_years, 0.1)) - 1
 
     vol_port = port_daily_ret.std() * np.sqrt(trading_days)
     vol_bench = bench_daily_ret.std() * np.sqrt(trading_days)
@@ -371,7 +402,7 @@ def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dc
         return dd.min()
 
     mdd_port = get_max_drawdown(df_results["Portfolio"])
-    mdd_bench = get_max_drawdown(df_results["SP500"])
+    mdd_bench = get_max_drawdown(df_results["Benchmark"])
 
     metrics_df = pd.DataFrame(
         {
@@ -385,7 +416,7 @@ def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dc
                 "Retorno Anualizado (CAGR)",
                 "Volatilidade (Risco)",
                 "Índice de Sharpe (Rf=4%)",
-                "Beta (vs SP500)",
+                f"Beta (vs {benchmark_label})",
                 "Max Drawdown",
             ],
             "Portefólio": [
@@ -401,12 +432,12 @@ def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dc
                 f"{beta:.2f}",
                 f"{mdd_port * 100:.2f}%",
             ],
-            "S&P 500 Benchmark": [
+            f"{benchmark_label}": [
                 f"{df_results['Invested'].iloc[-1]:,.2f} €",
-                f"{df_results['SP500'].iloc[-1]:,.2f} €",
+                f"{df_results['Benchmark'].iloc[-1]:,.2f} €",
                 f"{div_est_bench:,.2f} €",
                 f"{div_yield_bench:.2f}%",
-                f"{df_results['SP500_NoDiv'].iloc[-1]:,.2f} €",
+                f"{df_results['Benchmark_NoDiv'].iloc[-1]:,.2f} €",
                 f"{total_ret_bench * 100:.2f}%",
                 f"{cagr_bench * 100:.2f}%",
                 f"{vol_bench * 100:.2f}%",
@@ -425,10 +456,10 @@ def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dc
         hovertemplate="<b>Data:</b> %{x|%d/%m/%Y}<br><b>Portefólio:</b> %{y:,.2f} €<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
-        x=df_results.index, y=df_results["SP500"],
-        mode="lines", name="S&P 500 (Com Dividendos)",
+        x=df_results.index, y=df_results["Benchmark"],
+        mode="lines", name=f"{benchmark_label} (Com Dividendos)",
         line=dict(color="#8fb3d9", width=2),
-        hovertemplate="<b>Data:</b> %{x|%d/%m/%Y}<br><b>S&P 500:</b> %{y:,.2f} €<extra></extra>",
+        hovertemplate=f"<b>Data:</b> %{{x|%d/%m/%Y}}<br><b>{benchmark_label}:</b> %{{y:,.2f}} €<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
         x=df_results.index, y=df_results["Invested"],
@@ -437,7 +468,7 @@ def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dc
         hovertemplate="<b>Data:</b> %{x|%d/%m/%Y}<br><b>Investido:</b> %{y:,.2f} €<extra></extra>",
     ))
     fig.update_layout(
-        title="<b>Evolução do Património vs S&P 500 (Com Reinvestimento de Dividendos)</b>",
+        title=f"<b>Evolução do Património vs {benchmark_label} (Com Reinvestimento de Dividendos)</b>",
         xaxis_title="Data", yaxis_title="Valor (€ / $)",
         hovermode="x unified",
         margin=dict(l=40, r=40, t=60, b=40),
@@ -446,7 +477,7 @@ def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dc
     fig = style_plotly(fig)
 
     # ---- Novas análises: stress test, diversificação, cap/estilo ----
-    stress_df = build_stress_test_table(df_results, top_n=5)
+    stress_df = build_stress_test_table(df_results, benchmark_label, top_n=5)
 
     fundamentals = get_ticker_fundamentals(tickers)
     sector_series, country_series, capstyle_table, excluded_capstyle = build_diversification_data(
@@ -483,7 +514,7 @@ def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dc
     <body>
         <div class="container">
             <h1>Luminara Capital — Relatório de Portefólio, Risco e Diversificação</h1>
-            <h2>Métricas de Performance, Risco e Dividendos</h2>
+            <h2>Métricas de Performance, Risco e Dividendos (vs {benchmark_label})</h2>
             {table_html}
             <h2>Gráfico Interativo de Desempenho</h2>
             {fig.to_html(full_html=False, include_plotlyjs='cdn')}
@@ -521,14 +552,40 @@ def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dc
 # ------------------------------------------------------------------------------
 page_header(
     "📊",
-    "Simulador de Portefólio vs S&P 500",
-    "Simula um portefólio com investimento inicial + DCA mensal, comparado com o S&P 500 (com dividendos reinvestidos).",
+    "Simulador de Portefólio vs Benchmark",
+    "Simula um portefólio com investimento inicial + DCA mensal, comparado com um índice de referência à tua escolha "
+    "(com dividendos reinvestidos).",
 )
 
 with st.sidebar:
     st.header("⚙️ Configuração do Portefólio")
     tickers_input = st.text_input("Tickers (separados por vírgula)", "AAPL, MSFT, NVDA, BTC-USD")
     weights_input = st.text_input("Pesos % (mesma ordem dos tickers)", "30, 30, 20, 20")
+
+    st.markdown("**📌 Benchmark de Comparação**")
+    benchmark_choice = st.selectbox(
+        "Índice de referência",
+        options=list(BENCHMARK_OPTIONS.keys()),
+        index=0,
+        label_visibility="collapsed",
+    )
+
+    if BENCHMARK_OPTIONS[benchmark_choice] is None:
+        custom_ticker = st.text_input(
+            "Ticker Yahoo Finance do benchmark",
+            "^PSI20",
+            help="Indica o símbolo exato como aparece no Yahoo Finance (ex.: ^PSI20, ^BVSP, ^MERV).",
+        )
+        benchmark_ticker = custom_ticker.strip().upper()
+        benchmark_label = benchmark_ticker
+    else:
+        benchmark_ticker = BENCHMARK_OPTIONS[benchmark_choice]
+        benchmark_label = benchmark_choice.split(" (")[0]
+
+    st.caption(
+        "💡 Para carteiras de ações portuguesas, o PSI é normalmente a comparação mais relevante em vez do S&P 500."
+    )
+
     start_date = st.date_input("Data Inicial", value=pd.to_datetime("2021-01-01"))
     initial_inv = st.number_input("Investimento Inicial (€)", min_value=0.0, value=10000.0, step=100.0)
     monthly_dca = st.number_input("Aporte Mensal / DCA (€)", min_value=0.0, value=100.0, step=10.0)
@@ -541,17 +598,20 @@ if run_button:
 
         if len(tickers) != len(weights):
             st.error("❌ O número de tickers e o número de pesos devem ser iguais.")
+        elif not benchmark_ticker:
+            st.error("❌ Indica um ticker válido para o benchmark.")
         else:
-            with st.spinner("A obter dados de mercado, fundamentais e a simular o portefólio..."):
+            with st.spinner(f"A obter dados de mercado, fundamentais e a simular o portefólio vs {benchmark_label}..."):
                 result = run_portfolio_analysis(
-                    tickers, weights, start_date.strftime("%Y-%m-%d"), initial_inv, monthly_dca
+                    tickers, weights, start_date.strftime("%Y-%m-%d"), initial_inv, monthly_dca,
+                    benchmark_ticker, benchmark_label,
                 )
 
             if result is not None:
                 metrics_df = result["metrics_df"]
                 fig = result["fig"]
 
-                st.subheader("📋 Tabela Comparativa de Desempenho, Risco e Dividendos")
+                st.subheader(f"📋 Tabela Comparativa de Desempenho, Risco e Dividendos (vs {benchmark_label})")
                 st.dataframe(metrics_df, use_container_width=True)
 
                 st.subheader("📈 Gráfico Interativo de Desempenho")
@@ -561,7 +621,7 @@ if run_button:
                 st.subheader("🧨 Stress Test — Piores Quedas Históricas")
                 st.caption(
                     "Deteção automática dos maiores episódios de queda (pico → vale) do portefólio "
-                    "no período selecionado, comparados com o S&P 500 e associados ao evento macro mais provável."
+                    f"no período selecionado, comparados com {benchmark_label} e associados ao evento macro mais provável."
                 )
                 if result["stress_df"] is not None:
                     st.dataframe(result["stress_df"], use_container_width=True, hide_index=True)
