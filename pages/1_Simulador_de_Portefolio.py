@@ -562,6 +562,17 @@ with st.sidebar:
     tickers_input = st.text_input("Tickers (separados por vírgula)", "AAPL, MSFT, NVDA, BTC-USD")
     weights_input = st.text_input("Pesos % (mesma ordem dos tickers)", "30, 30, 20, 20")
 
+    # Feedback em tempo real sobre a soma dos pesos, sem precisar de clicar em Simular
+    try:
+        _live_weights = [float(w.strip()) for w in weights_input.split(",") if w.strip()]
+        _live_sum = sum(_live_weights)
+        if abs(_live_sum - 100) < 0.01:
+            st.caption(f"✅ Soma dos pesos: {_live_sum:.2f}%")
+        else:
+            st.caption(f"⚠️ Soma dos pesos: {_live_sum:.2f}% — tem de somar exatamente 100%.")
+    except ValueError:
+        st.caption("⚠️ Verifica o formato dos pesos (usa números separados por vírgulas).")
+
     st.markdown("**📌 Benchmark de Comparação**")
     benchmark_choice = st.selectbox(
         "Índice de referência",
@@ -592,8 +603,15 @@ if run_button:
         tickers = [t.strip().upper() for t in tickers_input.split(",") if t.strip()]
         weights = [float(w.strip()) for w in weights_input.split(",") if w.strip()]
 
+        weights_sum = sum(weights)
+
         if len(tickers) != len(weights):
             st.error("❌ O número de tickers e o número de pesos devem ser iguais.")
+        elif abs(weights_sum - 100) > 0.01:
+            st.error(
+                f"❌ A soma dos pesos é {weights_sum:.2f}%, mas tem de ser exatamente 100%. "
+                "Ajusta os valores na barra lateral (por exemplo, 30, 30, 20, 20)."
+            )
         elif not benchmark_ticker:
             st.error("❌ Indica um ticker válido para o benchmark.")
         else:
