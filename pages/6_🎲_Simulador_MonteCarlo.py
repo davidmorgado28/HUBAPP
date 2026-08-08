@@ -27,13 +27,13 @@ import plotly.graph_objects as go
 # Tema partilhado (com fallback caso os nomes não coincidam exatamente)
 # ----------------------------------------------------------------------
 try:
-    from theme import apply_theme, page_header, style_plotly
+    from theme import inject_theme, page_header, style_plotly
 except ImportError:
-    def apply_theme():
+    def inject_theme():
         pass
 
-    def page_header(title, subtitle=None):
-        st.title(title)
+    def page_header(icon, title, subtitle=""):
+        st.title(f"{icon} {title}")
         if subtitle:
             st.caption(subtitle)
 
@@ -48,8 +48,8 @@ except ImportError:
         return fig
 
 st.set_page_config(page_title="Simulador de Monte Carlo | Luminara Capital", page_icon="🎲", layout="wide")
-apply_theme()
-page_header("Simulador de Monte Carlo", "Projeção probabilística da evolução da tua carteira")
+inject_theme()
+page_header("🎲", "Simulador de Monte Carlo", "Projeção probabilística da evolução da tua carteira")
 
 GOLD = "#d4af37"
 GOLD_LIGHT = "#f6e7c1"
