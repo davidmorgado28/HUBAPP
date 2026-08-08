@@ -27,7 +27,11 @@ import plotly.graph_objects as go
 # Tema partilhado (com fallback caso os nomes não coincidam exatamente)
 # ----------------------------------------------------------------------
 try:
-    from theme import inject_theme, page_header, style_plotly
+    from theme import (
+        inject_theme, page_header, style_plotly,
+        NAVY_950, NAVY_900, NAVY_800, NAVY_700,
+        GOLD_100, GOLD_300, GOLD_500, GOLD_700, IVORY,
+    )
 except ImportError:
     def inject_theme():
         pass
@@ -47,12 +51,16 @@ except ImportError:
         )
         return fig
 
+    NAVY_950, NAVY_900, NAVY_800, NAVY_700 = "#05070f", "#0a0e27", "#0d1230", "#131a3d"
+    GOLD_100, GOLD_300, GOLD_500, GOLD_700 = "#f6e7c1", "#e8c874", "#d4af37", "#b8912e"
+    IVORY = "#f5f5f0"
+
 st.set_page_config(page_title="Simulador de Monte Carlo | Luminara Capital", page_icon="🎲", layout="wide")
 inject_theme()
 page_header("🎲", "Simulador de Monte Carlo", "Projeção probabilística da evolução da tua carteira")
 
-GOLD = "#d4af37"
-GOLD_LIGHT = "#f6e7c1"
+GOLD = GOLD_500
+GOLD_LIGHT = GOLD_100
 
 # ----------------------------------------------------------------------
 # Estado inicial
@@ -227,6 +235,138 @@ if run_button:
             }
 
 # ----------------------------------------------------------------------
+# Helpers de formatação e exportação HTML
+# ----------------------------------------------------------------------
+def fmt_eur(v: float) -> str:
+    return f"€{v:,.0f}"
+
+
+HOVERLABEL_STYLE = dict(
+    bgcolor=NAVY_700,
+    bordercolor=GOLD,
+    font=dict(color=GOLD_LIGHT, family="Inter, sans-serif", size=13),
+)
+
+
+def build_html_report(res, metrics, params, figs) -> str:
+    import datetime as _dt
+
+    fan_div = figs["fan"].to_html(full_html=False, include_plotlyjs=False, config={"displayModeBar": False})
+    hist_div = figs["hist"].to_html(full_html=False, include_plotlyjs=False, config={"displayModeBar": False})
+    dd_div = figs["dd"].to_html(full_html=False, include_plotlyjs=False, config={"displayModeBar": False})
+    pie_div = figs["pie"].to_html(full_html=False, include_plotlyjs=False, config={"displayModeBar": False})
+
+    timestamp = _dt.datetime.now().strftime("%d/%m/%Y %H:%M")
+
+    metric_cards = "".join(
+        f"""<div class="metric">
+                <div class="metric-label">{label}</div>
+                <div class="metric-value">{value}</div>
+            </div>"""
+        for label, value in metrics
+    )
+
+    portfolio_rows = "".join(
+        f"<tr><td>{t}</td><td>{w*100:.1f}%</td></tr>"
+        for t, w in zip(res["valid_tickers"], res["valid_weights"])
+    )
+
+    return f"""<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<title>Relatório — Simulador de Monte Carlo | Luminara Capital</title>
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600&display=swap');
+    body {{
+        margin: 0; padding: 2.5rem 1.5rem;
+        background: radial-gradient(circle at 20% 0%, #0e1338 0%, {NAVY_900} 45%, {NAVY_950} 100%);
+        font-family: 'Inter', sans-serif; color: {IVORY};
+    }}
+    .wrap {{ max-width: 1100px; margin: 0 auto; }}
+    h1 {{
+        font-family: 'Playfair Display', serif;
+        background: linear-gradient(90deg, {GOLD_700} 0%, {GOLD_100} 45%, {GOLD_500} 100%);
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        font-size: 2rem; margin-bottom: 0.1rem;
+    }}
+    h2 {{ font-family: 'Playfair Display', serif; color: {GOLD_100}; border-bottom: 1px solid rgba(212,175,55,0.25); padding-bottom: 0.4rem; margin-top: 2.2rem; }}
+    .subtitle {{ color: rgba(245,245,240,0.65); margin-bottom: 1.8rem; }}
+    .params {{ display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem; }}
+    .params span {{
+        background: rgba(212,175,55,0.08); border: 1px solid rgba(212,175,55,0.3);
+        border-radius: 8px; padding: 0.35rem 0.7rem; font-size: 0.88rem; color: {GOLD_100};
+    }}
+    table {{ border-collapse: collapse; width: 100%; max-width: 420px; margin-bottom: 1rem; }}
+    th, td {{ text-align: left; padding: 0.4rem 0.7rem; border-bottom: 1px solid rgba(212,175,55,0.18); font-size: 0.9rem; }}
+    th {{ color: {GOLD_300}; font-weight: 600; }}
+    .metrics-grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.8rem; margin: 1rem 0 2rem 0; }}
+    .metric {{
+        background: linear-gradient(155deg, rgba(19,26,61,0.85) 0%, rgba(10,14,39,0.85) 100%);
+        border: 1px solid rgba(212,175,55,0.22); border-radius: 12px; padding: 0.9rem 1rem;
+    }}
+    .metric-label {{ font-size: 0.78rem; color: rgba(245,245,240,0.6); margin-bottom: 0.3rem; }}
+    .metric-value {{ font-size: 1.25rem; color: {GOLD_100}; font-weight: 600; }}
+    .chart-box {{
+        background: rgba(19,26,61,0.35); border: 1px solid rgba(212,175,55,0.18);
+        border-radius: 12px; padding: 0.8rem; margin-bottom: 1.6rem;
+    }}
+    .notes {{ font-size: 0.88rem; color: rgba(245,245,240,0.75); line-height: 1.6; }}
+    .notes li {{ margin-bottom: 0.35rem; }}
+    footer {{ margin-top: 2.5rem; font-size: 0.78rem; color: rgba(245,245,240,0.45); text-align: center; }}
+    @media (max-width: 700px) {{ .metrics-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
+</style>
+</head>
+<body>
+<div class="wrap">
+    <h1>🎲 Relatório — Simulador de Monte Carlo</h1>
+    <div class="subtitle">Luminara Capital &middot; gerado em {timestamp}</div>
+
+    <div class="params">
+        <span>Montante inicial: {fmt_eur(params['initial_investment'])}</span>
+        <span>Aporte mensal: {fmt_eur(params['monthly_investment'])}</span>
+        <span>Horizonte: {params['horizon_years']} anos</span>
+        <span>Simulações: {params['n_simulations']:,}</span>
+        <span>Método: {params['method']}</span>
+    </div>
+
+    <table>
+        <tr><th>Ticker</th><th>Peso</th></tr>
+        {portfolio_rows}
+    </table>
+
+    <h2>Resultados</h2>
+    <div class="metrics-grid">{metric_cards}</div>
+
+    <h2>Evolução Projetada da Carteira</h2>
+    <div class="chart-box">{fan_div}</div>
+
+    <h2>Distribuição do Valor Final</h2>
+    <div class="chart-box">{hist_div}</div>
+
+    <h2>Distribuição do Máximo Drawdown</h2>
+    <div class="chart-box">{dd_div}</div>
+
+    <h2>Alocação da Carteira</h2>
+    <div class="chart-box">{pie_div}</div>
+
+    <h2>Notas Metodológicas</h2>
+    <ul class="notes">
+        <li>Retornos mensais históricos (até ~10 anos, ou período disponível) foram combinados pelos pesos da carteira.</li>
+        <li>Método de amostragem: {params['method']}.</li>
+        <li>Cada simulação aplica um retorno mensal amostrado, seguido do aporte mensal, ao longo de {params['n_months']} meses.</li>
+        <li>O máximo drawdown é calculado por trajetória individual (pico a vale), depois agregado por média e percentil 5% (pior caso).</li>
+        <li>Esta simulação é apenas educativa e não constitui aconselhamento de investimento. Rentabilidade passada não garante rentabilidade futura.</li>
+    </ul>
+
+    <footer>Luminara Capital — Relatório gerado automaticamente pelo Simulador de Monte Carlo</footer>
+</div>
+</body>
+</html>"""
+
+
+# ----------------------------------------------------------------------
 # 4. Relatório e gráficos
 # ----------------------------------------------------------------------
 res = st.session_state.mc_results
@@ -296,64 +436,164 @@ if res is not None:
 
     st.caption(f"Intervalo de confiança 90% do valor final: €{p5:,.0f} — €{p95:,.0f}")
 
-    # ---- Fan chart (percentis ao longo do tempo) ----
-    st.markdown("#### Evolução Projetada da Carteira")
+    # ======================================================================
+    # Construção dos gráficos (feita antes de os mostrar, para poderem
+    # também ser embutidos no relatório HTML exportável)
+    # ======================================================================
     percentiles = [5, 25, 50, 75, 95]
     perc_paths = np.percentile(res["paths"], percentiles, axis=0)
     x_months = np.arange(0, n_months + 1)
     x_years = x_months / 12
+    dtick = 1 if horizon_years <= 5 else (2 if horizon_years <= 10 else 5)
+    total_invested_line = initial_investment + x_months * monthly_investment
 
+    # ---- Fan chart (percentis ao longo do tempo) -------------------------
     fig_fan = go.Figure()
-    fig_fan.add_trace(go.Scatter(x=x_years, y=perc_paths[4], line=dict(width=0), showlegend=False, hoverinfo="skip"))
+
     fig_fan.add_trace(go.Scatter(
-        x=x_years, y=perc_paths[0], fill="tonexty", fillcolor="rgba(212,175,55,0.10)",
-        line=dict(width=0), name="Percentil 5–95%",
-    ))
-    fig_fan.add_trace(go.Scatter(x=x_years, y=perc_paths[3], line=dict(width=0), showlegend=False, hoverinfo="skip"))
-    fig_fan.add_trace(go.Scatter(
-        x=x_years, y=perc_paths[1], fill="tonexty", fillcolor="rgba(212,175,55,0.25)",
-        line=dict(width=0), name="Percentil 25–75%",
+        x=x_years, y=perc_paths[4], name="P95 (otimista)",
+        line=dict(width=0), hovertemplate="P95: €%{y:,.0f}<extra></extra>",
     ))
     fig_fan.add_trace(go.Scatter(
-        x=x_years, y=perc_paths[2], line=dict(color=GOLD, width=3), name="Mediana",
+        x=x_years, y=perc_paths[3], name="P75",
+        line=dict(width=0), fill="tonexty", fillcolor="rgba(212,175,55,0.12)",
+        hovertemplate="P75: €%{y:,.0f}<extra></extra>",
     ))
-    fig_fan.update_xaxes(title="Anos")
-    fig_fan.update_yaxes(title="Valor da Carteira (€)")
+    fig_fan.add_trace(go.Scatter(
+        x=x_years, y=perc_paths[2], name="Mediana (P50)",
+        line=dict(color=GOLD, width=3), fill="tonexty", fillcolor="rgba(212,175,55,0.22)",
+        hovertemplate="Mediana: €%{y:,.0f}<extra></extra>",
+    ))
+    fig_fan.add_trace(go.Scatter(
+        x=x_years, y=perc_paths[1], name="P25",
+        line=dict(width=0), fill="tonexty", fillcolor="rgba(212,175,55,0.22)",
+        hovertemplate="P25: €%{y:,.0f}<extra></extra>",
+    ))
+    fig_fan.add_trace(go.Scatter(
+        x=x_years, y=perc_paths[0], name="P5 (pessimista)",
+        line=dict(width=0), fill="tonexty", fillcolor="rgba(212,175,55,0.12)",
+        hovertemplate="P5: €%{y:,.0f}<extra></extra>",
+    ))
+    fig_fan.add_trace(go.Scatter(
+        x=x_years, y=total_invested_line, name="Capital investido (sem crescimento)",
+        line=dict(color="rgba(245,245,240,0.55)", width=2, dash="dash"),
+        hovertemplate="Capital investido: €%{y:,.0f}<extra></extra>",
+    ))
+
+    fig_fan.update_layout(
+        hovermode="x unified",
+        hoverlabel=HOVERLABEL_STYLE,
+        height=460,
+        margin=dict(l=10, r=10, t=10, b=10),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
+    )
+    fig_fan.update_xaxes(title="Horizonte (anos)", dtick=dtick)
+    fig_fan.update_yaxes(title="Valor da Carteira (€)", tickprefix="€", tickformat=",.0f")
     fig_fan = style_plotly(fig_fan)
+
+    # ---- Histograma dos valores finais ------------------------------------
+    n_bins = int(np.clip(n_simulations // 40, 30, 80))
+
+    fig_hist = go.Figure()
+    fig_hist.add_trace(go.Histogram(
+        x=final_values, nbinsx=n_bins, histnorm="percent",
+        marker=dict(color=GOLD, line=dict(color=NAVY_800, width=0.5)),
+        name="Valor Final",
+        hovertemplate="≈ €%{x:,.0f}<br>%{y:.1f}% das simulações<extra></extra>",
+    ))
+    fig_hist.add_vline(x=total_invested, line_dash="dash", line_color=GOLD_LIGHT,
+                        annotation_text="Capital investido", annotation_position="top right")
+    fig_hist.add_vline(x=median_value, line_dash="dot", line_color="white",
+                        annotation_text="Mediana", annotation_position="top left")
+    fig_hist.add_vline(x=p5, line_dash="dot", line_color="#E8927C",
+                        annotation_text="P5", annotation_position="bottom left")
+    fig_hist.add_vline(x=p95, line_dash="dot", line_color="#7FD9A8",
+                        annotation_text="P95", annotation_position="bottom right")
+    fig_hist.update_layout(hoverlabel=HOVERLABEL_STYLE, height=420, margin=dict(l=10, r=10, t=10, b=10), bargap=0.03)
+    fig_hist.update_xaxes(title="Valor Final (€)", tickprefix="€", tickformat=",.0f")
+    fig_hist.update_yaxes(title="% das simulações")
+    fig_hist = style_plotly(fig_hist)
+
+    # ---- Histograma do máximo drawdown ------------------------------------
+    fig_dd = go.Figure()
+    fig_dd.add_trace(go.Histogram(
+        x=drawdowns * 100, nbinsx=n_bins, histnorm="percent",
+        marker=dict(color="#8c7024", line=dict(color=NAVY_800, width=0.5)),
+        name="Máx. Drawdown",
+        hovertemplate="≈ %{x:.1f}%<br>%{y:.1f}% das simulações<extra></extra>",
+    ))
+    fig_dd.add_vline(x=avg_max_dd, line_dash="dash", line_color=GOLD_LIGHT,
+                      annotation_text="Média", annotation_position="top right")
+    fig_dd.add_vline(x=worst_max_dd, line_dash="dot", line_color="#E8927C",
+                      annotation_text="Pior 5%", annotation_position="top left")
+    fig_dd.update_layout(hoverlabel=HOVERLABEL_STYLE, height=420, margin=dict(l=10, r=10, t=10, b=10), bargap=0.03)
+    fig_dd.update_xaxes(title="Máximo Drawdown (%)", ticksuffix="%")
+    fig_dd.update_yaxes(title="% das simulações")
+    fig_dd = style_plotly(fig_dd)
+
+    # ---- Alocação -----------------------------------------------------------
+    fig_pie = go.Figure(data=[go.Pie(
+        labels=res["valid_tickers"], values=res["valid_weights"],
+        hole=0.5, marker=dict(colors=["#d4af37", "#f6e7c1", "#8c7024", "#e8d9a0", "#b8974a", "#c9a961"]),
+        hovertemplate="%{label}<br>%{percent}<extra></extra>",
+    )])
+    fig_pie.update_layout(hoverlabel=HOVERLABEL_STYLE, height=380, margin=dict(l=10, r=10, t=10, b=10))
+    fig_pie = style_plotly(fig_pie)
+
+    # ======================================================================
+    # Botão de download do relatório em HTML
+    # ======================================================================
+    html_metrics = [
+        ("Valor Esperado Final", fmt_eur(expected_value)),
+        ("Retorno Anualizado", f"{annualized_return*100:.2f}%"),
+        ("Volatilidade Anualizada", f"{annualized_vol*100:.2f}%"),
+        ("Probabilidade de Perda", f"{prob_loss:.1f}%"),
+        ("Mediana Valor Final", fmt_eur(median_value)),
+        ("Desvio-Padrão (Valor Final)", fmt_eur(std_value)),
+        ("Máx. Drawdown Médio", f"{avg_max_dd:.1f}%"),
+        ("Máx. Drawdown (pior 5%)", f"{worst_max_dd:.1f}%"),
+    ]
+    html_report = build_html_report(
+        res=res,
+        metrics=html_metrics,
+        params={
+            "initial_investment": initial_investment,
+            "monthly_investment": monthly_investment,
+            "horizon_years": horizon_years,
+            "n_simulations": int(n_simulations),
+            "method": method,
+            "n_months": n_months,
+        },
+        figs={"fan": fig_fan, "hist": fig_hist, "dd": fig_dd, "pie": fig_pie},
+    )
+
+    st.download_button(
+        "📥 Descarregar Relatório em HTML",
+        data=html_report,
+        file_name="relatorio_monte_carlo_luminara.html",
+        mime="text/html",
+        use_container_width=True,
+    )
+
+    # ======================================================================
+    # Exibição dos gráficos
+    # ======================================================================
+    st.markdown("#### Evolução Projetada da Carteira")
+    st.caption("Passa o cursor sobre o gráfico para ver os valores de cada percentil em qualquer ano.")
     st.plotly_chart(fig_fan, use_container_width=True)
 
-    # ---- Histograma dos valores finais ----
     hist_col, dd_col = st.columns(2)
-
     with hist_col:
         st.markdown("#### Distribuição do Valor Final")
-        fig_hist = go.Figure()
-        fig_hist.add_trace(go.Histogram(x=final_values, nbinsx=60, marker_color=GOLD, name="Valor Final"))
-        fig_hist.add_vline(x=total_invested, line_dash="dash", line_color=GOLD_LIGHT,
-                            annotation_text="Total Investido")
-        fig_hist.add_vline(x=median_value, line_dash="dot", line_color="white",
-                            annotation_text="Mediana")
-        fig_hist.update_xaxes(title="Valor Final (€)")
-        fig_hist.update_yaxes(title="Frequência")
-        fig_hist = style_plotly(fig_hist)
+        st.caption("Cada barra mostra a % de simulações que terminaram naquele intervalo de valores.")
         st.plotly_chart(fig_hist, use_container_width=True)
 
     with dd_col:
         st.markdown("#### Distribuição do Máximo Drawdown")
-        fig_dd = go.Figure()
-        fig_dd.add_trace(go.Histogram(x=drawdowns * 100, nbinsx=60, marker_color="#8c7024", name="Max Drawdown"))
-        fig_dd.update_xaxes(title="Máximo Drawdown (%)")
-        fig_dd.update_yaxes(title="Frequência")
-        fig_dd = style_plotly(fig_dd)
+        st.caption("A pior queda temporária (pico a vale) registada em cada simulação.")
         st.plotly_chart(fig_dd, use_container_width=True)
 
-    # ---- Alocação ----
     st.markdown("#### Alocação da Carteira Simulada")
-    fig_pie = go.Figure(data=[go.Pie(
-        labels=res["valid_tickers"], values=res["valid_weights"],
-        hole=0.5, marker=dict(colors=["#d4af37", "#f6e7c1", "#8c7024", "#e8d9a0", "#b8974a", "#c9a961"]),
-    )])
-    fig_pie = style_plotly(fig_pie)
     st.plotly_chart(fig_pie, use_container_width=True)
 
     with st.expander("ℹ️ Notas metodológicas"):
