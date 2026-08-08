@@ -2,6 +2,9 @@
 # 📊 SIMULADOR DE PORTEFÓLIO vs S&P 500 — Aplicação Streamlit
 # Convertido a partir do notebook original (Colab) para uma app de ambiente
 # de trabalho, com interface web local.
+#
+# ATUALIZAÇÃO: adiciona Stress Test (piores quedas históricas), diversificação
+# setorial e geográfica, e tabela cruzada Cap Size x Estilo (Value/Growth/Core).
 # ==============================================================================
 
 import sys
@@ -27,6 +30,26 @@ st.set_page_config(
 
 inject_theme()
 
+# Paleta consistente com a identidade Luminara Capital (dourado / navy)
+LUMINARA_PALETTE = [
+    "#d4af37", "#8fb3d9", "#7fd9a8", "#f6e7c1", "#b8912e",
+    "#4a5a8f", "#c9a876", "#5c6b8a", "#e8c874", "#6f8fae",
+]
+
+# ------------------------------------------------------------------------------
+# EVENTOS MACRO CONHECIDOS (para contextualizar os piores drawdowns)
+# Datas aproximadas com base em picos/vales de mercado amplamente reportados.
+# ------------------------------------------------------------------------------
+KNOWN_EVENTS = [
+    ("2018-09-20", "2018-12-24", "Selloff Q4 2018 (subida de juros da Fed + receios de recessão)"),
+    ("2020-02-19", "2020-03-23", "Crash COVID-19 (paragem económica global)"),
+    ("2022-01-03", "2022-10-13", "Mercado Bear 2022 (inflação elevada + subida agressiva de juros)"),
+    ("2023-03-08", "2023-03-13", "Crise bancária regional dos EUA (colapso do SVB / Credit Suisse)"),
+    ("2024-08-01", "2024-08-08", "Correção de agosto 2024 (desmontagem do 'yen carry trade')"),
+    ("2025-02-19", "2025-04-08", "Guerra tarifária de Trump / 'Liberation Day' (escalada de tarifas comerciais)"),
+]
+
+
 # ------------------------------------------------------------------------------
 # MOTOR DE CÁLCULO (idêntico à lógica original, apenas adaptado a Streamlit)
 # ------------------------------------------------------------------------------
@@ -46,6 +69,195 @@ def download_prices(all_tickers, start_date):
     raw_close = raw_close.ffill().dropna()
     adj_close = adj_close.ffill().dropna()
     return raw_close, adj_close
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def get_ticker_fundamentals(tickers):
+    """Obtém setor, país, tipo de instrumento, market cap, P/E e P/B por ticker."""
+    fundamentals = {}
+    for t in tickers:
+        try:
+            info = yf.Ticker(t).info
+        except Exception:
+            info = {}
+
+        is_crypto = t.upper().endswith("-USD") or info.get("quoteType") == "CRYPTOCURRENCY"
+        quote_type = info.get("quoteType", "N/D")
+
+        fundamentals[t] = {
+            "sector": "Criptomoeda" if is_crypto else (info.get("sector") or (
+                "ETF / Fundo" if quote_type == "ETF" else "Outro / Não Classificado"
+            )),
+            "country": "Global / Descentralizado" if is_crypto else (info.get("country") or "Não Especificado"),
+            "quote_type": quote_type,
+            "market_cap": info.get("marketCap"),
+            "trailing_pe": info.get("trailingPE"),
+            "price_to_book": info.get("priceToBook"),
+            "is_crypto": is_crypto,
+        }
+    return fundamentals
+
+
+def classify_cap_size(market_cap):
+    if market_cap is None:
+        return "N/D"
+    if market_cap >= 10_000_000_000:
+        return "Large Cap"
+    elif market_cap >= 2_000_000_000:
+        return "Mid Cap"
+    else:
+        return "Small Cap"
+
+
+def classify_style(pe, pb):
+    """Heurística simplificada de estilo (Value / Growth / Core) com base em P/E e P/B.
+    NOTA: aproximação didática — não corresponde à metodologia proprietária de
+    classificação usada por fornecedores como Morningstar."""
+    if pe is None or pe <= 0:
+        return "Core"
+    if pe < 15 and (pb is None or pb < 3):
+        return "Value"
+    elif pe > 25:
+        return "Growth"
+    else:
+        return "Core"
+
+
+def build_diversification_data(tickers, weights, fundamentals):
+    weights = np.array(weights) / np.sum(weights)
+
+    sector_weights, country_weights = {}, {}
+    capstyle_rows = []
+    excluded_from_capstyle = []
+
+    for t, w in zip(tickers, weights):
+        f = fundamentals.get(t, {})
+        sector = f.get("sector", "Outro / Não Classificado")
+        country = f.get("country", "Não Especificado")
+
+        sector_weights[sector] = sector_weights.get(sector, 0) + w
+        country_weights[country] = country_weights.get(country, 0) + w
+
+        if f.get("is_crypto") or f.get("quote_type") == "ETF" or f.get("market_cap") is None:
+            excluded_from_capstyle.append(t)
+            continue
+
+        cap = classify_cap_size(f.get("market_cap"))
+        style = classify_style(f.get("trailing_pe"), f.get("price_to_book"))
+        capstyle_rows.append({"ticker": t, "weight": w, "cap": cap, "style": style})
+
+    sector_df = pd.Series(sector_weights).sort_values(ascending=False) * 100
+    country_df = pd.Series(country_weights).sort_values(ascending=False) * 100
+
+    cap_order = ["Large Cap", "Mid Cap", "Small Cap"]
+    style_order = ["Value", "Core", "Growth"]
+    capstyle_table = pd.DataFrame(0.0, index=cap_order, columns=style_order)
+    for row in capstyle_rows:
+        if row["cap"] in cap_order:
+            capstyle_table.loc[row["cap"], row["style"]] += row["weight"] * 100
+
+    return sector_df, country_df, capstyle_table, excluded_from_capstyle
+
+
+def make_pie_chart(series, title):
+    fig = go.Figure(data=[go.Pie(
+        labels=series.index,
+        values=series.values,
+        hole=0.45,
+        marker=dict(colors=LUMINARA_PALETTE, line=dict(color="#05070f", width=1.5)),
+        textinfo="label+percent",
+        hovertemplate="<b>%{label}</b><br>Peso: %{value:.1f}%<extra></extra>",
+    )])
+    fig.update_layout(title=f"<b>{title}</b>", height=430, margin=dict(l=20, r=20, t=60, b=20))
+    return style_plotly(fig)
+
+
+# ------------------------------------------------------------------------------
+# STRESS TEST — deteção automática dos piores drawdowns + evento macro associado
+# ------------------------------------------------------------------------------
+def get_drawdown_episodes(series, top_n=5):
+    cummax = series.cummax()
+    episodes = []
+    in_dd = False
+    peak_date, peak_val = series.index[0], series.iloc[0]
+    trough_date, trough_val = None, None
+
+    for date, val in series.items():
+        if val >= cummax.loc[date] * 0.999999:
+            if in_dd and trough_date is not None:
+                episodes.append({
+                    "peak_date": peak_date, "peak_val": peak_val,
+                    "trough_date": trough_date, "trough_val": trough_val,
+                    "recovery_date": date,
+                })
+            peak_date, peak_val = date, val
+            trough_date, trough_val = None, None
+            in_dd = False
+        else:
+            in_dd = True
+            if trough_val is None or val < trough_val:
+                trough_val, trough_date = val, date
+
+    if in_dd and trough_date is not None:
+        episodes.append({
+            "peak_date": peak_date, "peak_val": peak_val,
+            "trough_date": trough_date, "trough_val": trough_val,
+            "recovery_date": None,
+        })
+
+    for ep in episodes:
+        ep["drawdown_pct"] = (ep["trough_val"] - ep["peak_val"]) / ep["peak_val"]
+
+    # Ignorar micro-quedas irrelevantes (< 3%) e ordenar pela mais severa
+    episodes = [e for e in episodes if e["drawdown_pct"] <= -0.03]
+    episodes = sorted(episodes, key=lambda x: x["drawdown_pct"])[:top_n]
+    return episodes
+
+
+def match_known_event(trough_date):
+    for start, end, label in KNOWN_EVENTS:
+        start_ts, end_ts = pd.Timestamp(start), pd.Timestamp(end)
+        if start_ts - pd.Timedelta(days=12) <= trough_date <= end_ts + pd.Timedelta(days=12):
+            return label
+    return "Correção de mercado (sem evento macro específico identificado)"
+
+
+def build_stress_test_table(df_results, top_n=5):
+    port_series = df_results["Portfolio"]
+    bench_series = df_results["SP500"]
+
+    episodes = get_drawdown_episodes(port_series, top_n=top_n)
+    if not episodes:
+        return None
+
+    rows = []
+    for ep in episodes:
+        peak_date, trough_date = ep["peak_date"], ep["trough_date"]
+        recovery_date = ep["recovery_date"]
+
+        duration_days = (trough_date - peak_date).days
+        if recovery_date is not None:
+            recovery_str = f"{(recovery_date - trough_date).days} dias"
+        else:
+            recovery_str = "Ainda em recuperação"
+
+        # Queda do S&P 500 na mesma janela, para comparação
+        try:
+            bench_window = bench_series.loc[peak_date:trough_date]
+            bench_dd = (bench_window.min() - bench_window.iloc[0]) / bench_window.iloc[0]
+        except Exception:
+            bench_dd = np.nan
+
+        rows.append({
+            "Período (Pico → Vale)": f"{peak_date.strftime('%d/%m/%Y')} → {trough_date.strftime('%d/%m/%Y')}",
+            "Duração da Queda": f"{duration_days} dias",
+            "Queda Máxima — Portefólio": f"{ep['drawdown_pct'] * 100:.2f}%",
+            "Queda Máxima — S&P 500": f"{bench_dd * 100:.2f}%" if not np.isnan(bench_dd) else "N/D",
+            "Tempo até Recuperação": recovery_str,
+            "Evento Provável": match_known_event(trough_date),
+        })
+
+    return pd.DataFrame(rows)
 
 
 def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dca):
@@ -233,13 +445,27 @@ def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dc
     )
     fig = style_plotly(fig)
 
+    # ---- Novas análises: stress test, diversificação, cap/estilo ----
+    stress_df = build_stress_test_table(df_results, top_n=5)
+
+    fundamentals = get_ticker_fundamentals(tickers)
+    sector_series, country_series, capstyle_table, excluded_capstyle = build_diversification_data(
+        tickers, weights, fundamentals
+    )
+    sector_fig = make_pie_chart(sector_series, "Diversificação Setorial")
+    geo_fig = make_pie_chart(country_series, "Diversificação Geográfica")
+
+    # ---- Relatório HTML ----
     table_html = metrics_df.to_html(classes="styled-table", border=0)
+    stress_html = stress_df.to_html(classes="styled-table", border=0, index=False) if stress_df is not None else "<p>Sem quedas relevantes (&gt;3%) no período selecionado.</p>"
+    capstyle_html = capstyle_table.round(2).to_html(classes="styled-table", border=0)
+
     html_content = f"""
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="utf-8">
-        <title>Relatório de Desempenho e Dividendos</title>
+        <title>Relatório de Desempenho, Risco e Diversificação</title>
         <style>
             @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600&display=swap');
             body {{ font-family: 'Inter', Arial, sans-serif; margin: 30px; background-color: #05070f; color: #f5f5f0; }}
@@ -251,21 +477,43 @@ def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dc
             .styled-table th, .styled-table td {{ padding: 12px 15px; border-bottom: 1px solid rgba(212,175,55,0.15); color: #f5f5f0; }}
             .styled-table tbody tr:nth-of-type(even) {{ background-color: rgba(212,175,55,0.05); }}
             .styled-table tbody tr:last-of-type {{ border-bottom: 2px solid #d4af37; }}
+            .caption {{ color: #a9b3c9; font-size: 0.85em; margin-top: -10px; margin-bottom: 20px; }}
         </style>
     </head>
     <body>
         <div class="container">
-            <h1>Luminara Capital — Relatório de Portefólio e Dividendos vs S&P 500</h1>
+            <h1>Luminara Capital — Relatório de Portefólio, Risco e Diversificação</h1>
             <h2>Métricas de Performance, Risco e Dividendos</h2>
             {table_html}
             <h2>Gráfico Interativo de Desempenho</h2>
             {fig.to_html(full_html=False, include_plotlyjs='cdn')}
+            <h2>Stress Test — Piores Quedas Históricas do Portefólio</h2>
+            <p class="caption">Deteção automática dos maiores episódios de queda (pico → vale) no período selecionado, com o evento macro mais provável associado.</p>
+            {stress_html}
+            <h2>Diversificação Setorial</h2>
+            {sector_fig.to_html(full_html=False, include_plotlyjs=False)}
+            <h2>Diversificação Geográfica</h2>
+            {geo_fig.to_html(full_html=False, include_plotlyjs=False)}
+            <h2>Tabela Cruzada — Capitalização x Estilo (% do Portefólio)</h2>
+            <p class="caption">Classificação aproximada com base em capitalização de mercado e rácios P/E e P/B. ETFs e criptomoedas não são incluídos (não têm estas métricas). Estilo é uma heurística simplificada, não uma classificação oficial.</p>
+            {capstyle_html}
         </div>
     </body>
     </html>
     """
 
-    return metrics_df, fig, html_content
+    return {
+        "metrics_df": metrics_df,
+        "fig": fig,
+        "stress_df": stress_df,
+        "sector_fig": sector_fig,
+        "geo_fig": geo_fig,
+        "sector_series": sector_series,
+        "country_series": country_series,
+        "capstyle_table": capstyle_table,
+        "excluded_capstyle": excluded_capstyle,
+        "html_content": html_content,
+    }
 
 
 # ------------------------------------------------------------------------------
@@ -294,13 +542,14 @@ if run_button:
         if len(tickers) != len(weights):
             st.error("❌ O número de tickers e o número de pesos devem ser iguais.")
         else:
-            with st.spinner("A obter dados de mercado e a simular o portefólio..."):
+            with st.spinner("A obter dados de mercado, fundamentais e a simular o portefólio..."):
                 result = run_portfolio_analysis(
                     tickers, weights, start_date.strftime("%Y-%m-%d"), initial_inv, monthly_dca
                 )
 
             if result is not None:
-                metrics_df, fig, html_content = result
+                metrics_df = result["metrics_df"]
+                fig = result["fig"]
 
                 st.subheader("📋 Tabela Comparativa de Desempenho, Risco e Dividendos")
                 st.dataframe(metrics_df, use_container_width=True)
@@ -308,10 +557,44 @@ if run_button:
                 st.subheader("📈 Gráfico Interativo de Desempenho")
                 st.plotly_chart(fig, use_container_width=True)
 
+                # ---- Stress Test ----
+                st.subheader("🧨 Stress Test — Piores Quedas Históricas")
+                st.caption(
+                    "Deteção automática dos maiores episódios de queda (pico → vale) do portefólio "
+                    "no período selecionado, comparados com o S&P 500 e associados ao evento macro mais provável."
+                )
+                if result["stress_df"] is not None:
+                    st.dataframe(result["stress_df"], use_container_width=True, hide_index=True)
+                else:
+                    st.info("Não foram detetadas quedas relevantes (> 3%) no período selecionado.")
+
+                # ---- Diversificação Setorial e Geográfica ----
+                st.subheader("🌍 Diversificação Setorial e Geográfica")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.plotly_chart(result["sector_fig"], use_container_width=True)
+                with col2:
+                    st.plotly_chart(result["geo_fig"], use_container_width=True)
+
+                # ---- Tabela Cruzada Cap Size x Estilo ----
+                st.subheader("🧮 Tabela Cruzada — Capitalização x Estilo")
+                st.caption(
+                    "Classificação aproximada com base em capitalização de mercado (Large/Mid/Small Cap) "
+                    "e rácios P/E e P/B (Value/Core/Growth). Valores em % do portefólio. "
+                    "ETFs e criptomoedas ficam de fora por não terem estas métricas disponíveis. "
+                    "É uma heurística simplificada, não uma classificação oficial de mercado."
+                )
+                st.dataframe(
+                    result["capstyle_table"].round(2).style.format("{:.2f}%"),
+                    use_container_width=True,
+                )
+                if result["excluded_capstyle"]:
+                    st.caption(f"⚠️ Excluídos da tabela cruzada: {', '.join(result['excluded_capstyle'])}")
+
                 st.download_button(
                     label="⬇️ Descarregar Relatório HTML Interativo",
-                    data=html_content,
-                    file_name="relatorio_portefolio_dividendos.html",
+                    data=result["html_content"],
+                    file_name="relatorio_portefolio_completo.html",
                     mime="text/html",
                     use_container_width=True,
                 )
