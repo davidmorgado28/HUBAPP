@@ -238,7 +238,7 @@ st.markdown(
         <div class="app-card">
             <div class="app-icon">📊</div>
             <div class="app-name">Simulador de Portefólio vs Benchmark</div>
-            <div class="app-desc">Compara a performance do teu portefólio com um indice de referência, com investimento inicial + DCA mensal.</div>
+            <div class="app-desc">Compara a performance do teu portefólio com um Indice de referência, com investimento inicial + DCA mensal.</div>
         </div>
         <div class="app-card">
             <div class="app-icon">📈</div>
@@ -253,12 +253,12 @@ st.markdown(
         <div class="app-card">
             <div class="app-icon">📑</div>
             <div class="app-name">Dashboard de Rácios & Valuation</div>
-            <div class="app-desc">Relatório estilo Wall Street: valuation, rentabilidade, alavancagem, liquidez e benchmark de pares.</div>
+            <div class="app-desc">Relatório de rácios financeiros: valuation, rentabilidade, alavancagem, liquidez e benchmark de pares.</div>
         </div>
         <div class="app-card">
             <div class="app-icon">🏢</div>
             <div class="app-name">Análise de REITs</div>
-            <div class="app-desc">Análise executiva de REITs: FFO/AFFO, dividendos, alavancagem e comparação com concorrentes.</div>
+            <div class="app-desc">Análise financeira de REITs: FFO/AFFO, dividendos, alavancagem e comparação com concorrentes.</div>
         </div>
     </div>
     """,
