@@ -237,8 +237,8 @@ st.markdown(
     <div class="app-grid">
         <div class="app-card">
             <div class="app-icon">📊</div>
-            <div class="app-name">Simulador de Portefólio vs S&amp;P 500</div>
-            <div class="app-desc">Compara a performance do teu portefólio com o índice S&amp;P 500, com investimento inicial + DCA mensal.</div>
+            <div class="app-name">Simulador de Portefólio vs Benchmark</div>
+            <div class="app-desc">Compara a performance do teu portefólio com um indice de referência, com investimento inicial + DCA mensal.</div>
         </div>
         <div class="app-card">
             <div class="app-icon">📈</div>
