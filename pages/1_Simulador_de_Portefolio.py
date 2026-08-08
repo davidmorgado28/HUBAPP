@@ -584,8 +584,8 @@ with st.sidebar:
     if BENCHMARK_OPTIONS[benchmark_choice] is None:
         custom_ticker = st.text_input(
             "Ticker Yahoo Finance do benchmark",
-            "^PSI20",
-            help="Indica o símbolo exato como aparece no Yahoo Finance (ex.: ^PSI20, ^BVSP, ^MERV).",
+            "PSI20.LS",
+            help="Indica o símbolo exato como aparece no Yahoo Finance (ex.: PSI20.LS, ^BVSP, ^MERV).",
         )
         benchmark_ticker = custom_ticker.strip().upper()
         benchmark_label = benchmark_ticker
