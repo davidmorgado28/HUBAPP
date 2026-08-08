@@ -582,10 +582,6 @@ with st.sidebar:
         benchmark_ticker = BENCHMARK_OPTIONS[benchmark_choice]
         benchmark_label = benchmark_choice.split(" (")[0]
 
-    st.caption(
-        "💡 Para carteiras de ações portuguesas, o PSI é normalmente a comparação mais relevante em vez do S&P 500."
-    )
-
     start_date = st.date_input("Data Inicial", value=pd.to_datetime("2021-01-01"))
     initial_inv = st.number_input("Investimento Inicial (€)", min_value=0.0, value=10000.0, step=100.0)
     monthly_dca = st.number_input("Aporte Mensal / DCA (€)", min_value=0.0, value=100.0, step=10.0)
