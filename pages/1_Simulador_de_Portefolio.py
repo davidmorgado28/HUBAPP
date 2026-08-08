@@ -48,7 +48,7 @@ BENCHMARK_OPTIONS = {
     "Nasdaq Composite (EUA)": "^IXIC",
     "Dow Jones Industrial Average (EUA)": "^DJI",
     "Russell 2000 (EUA, small caps)": "^RUT",
-    "PSI (Portugal)": "^PSI20",
+    "PSI (Portugal)": "PSI20.LS",
     "IBEX 35 (Espanha)": "^IBEX",
     "CAC 40 (França)": "^FCHI",
     "DAX (Alemanha)": "^GDAXI",
