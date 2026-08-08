@@ -251,16 +251,48 @@ if res is not None:
     p5, p95 = np.percentile(final_values, [5, 95])
 
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Valor Esperado Final", f"€{expected_value:,.0f}", f"vs €{total_invested:,.0f} investido")
-    k2.metric("Retorno Anualizado (histórico)", f"{annualized_return*100:.2f}%")
-    k3.metric("Volatilidade Anualizada", f"{annualized_vol*100:.2f}%")
-    k4.metric("Probabilidade de Perda", f"{prob_loss:.1f}%")
+    k1.metric(
+        "Valor Esperado Final", f"€{expected_value:,.0f}", f"vs €{total_invested:,.0f} investido",
+        help="Média do valor final da carteira em todas as simulações. É o resultado 'típico' esperado, "
+             "mas cada simulação individual pode terminar bem acima ou abaixo deste número.",
+    )
+    k2.metric(
+        "Retorno Anualizado (histórico)", f"{annualized_return*100:.2f}%",
+        help="Quanto a carteira rendeu, em média, por ano, com base no histórico de preços usado na simulação. "
+             "Não garante retornos futuros iguais.",
+    )
+    k3.metric(
+        "Volatilidade Anualizada", f"{annualized_vol*100:.2f}%",
+        help="Mede o quanto o valor da carteira costuma oscilar (para cima e para baixo) ao longo de um ano. "
+             "Quanto maior, mais 'aos saltos' costuma ser o percurso.",
+    )
+    k4.metric(
+        "Probabilidade de Perda", f"{prob_loss:.1f}%",
+        help="Percentagem das simulações em que, no final do horizonte definido, o valor da carteira ficou "
+             "abaixo do total que investiste (inicial + todos os aportes mensais).",
+    )
 
     k5, k6, k7, k8 = st.columns(4)
-    k5.metric("Mediana Valor Final", f"€{median_value:,.0f}")
-    k6.metric("Desvio-Padrão (Valor Final)", f"€{std_value:,.0f}")
-    k7.metric("Máx. Drawdown Médio", f"{avg_max_dd:.1f}%")
-    k8.metric("Máx. Drawdown (pior 5%)", f"{worst_max_dd:.1f}%")
+    k5.metric(
+        "Mediana Valor Final", f"€{median_value:,.0f}",
+        help="O valor 'do meio': metade das simulações terminou acima deste valor, metade abaixo. "
+             "Costuma ser uma leitura mais realista do que a média quando há cenários muito extremos.",
+    )
+    k6.metric(
+        "Desvio-Padrão (Valor Final)", f"€{std_value:,.0f}",
+        help="Mede o quanto os resultados finais das várias simulações variam entre si. Quanto maior este "
+             "número, mais incerto e imprevisível é o resultado final da carteira.",
+    )
+    k7.metric(
+        "Máx. Drawdown Médio", f"{avg_max_dd:.1f}%",
+        help="Em cada simulação, é a maior queda (do pico até ao vale) que a carteira sofreu a certo ponto do "
+             "percurso, mesmo que depois tenha recuperado. Este valor é a média dessa queda em todas as simulações.",
+    )
+    k8.metric(
+        "Máx. Drawdown (pior 5%)", f"{worst_max_dd:.1f}%",
+        help="Olhando só para os 5% cenários mais dolorosos, esta foi a queda temporária mais profunda que a "
+             "carteira sofreu. Dá uma ideia de 'quão mau pode ser o pior caso', não só o caso típico.",
+    )
 
     st.caption(f"Intervalo de confiança 90% do valor final: €{p5:,.0f} — €{p95:,.0f}")
 
