@@ -126,8 +126,10 @@ STYLE_CSS = """
 </style>
 """
 
+MAX_PEERS = 6
+
 # ------------------------------------------------------------------------------
-# LÓGICA DE CÁLCULO (inalterada)
+# LÓGICA DE CÁLCULO (inalterada, salvo peer benchmark)
 # ------------------------------------------------------------------------------
 def safe_div(num, denom):
     if denom is None or num is None or denom == 0 or np.isnan(denom) or np.isnan(num):
@@ -260,35 +262,52 @@ def fetch_financial_data(ticker_symbol):
     }
 
 
+def parse_peer_tickers(raw_text, main_ticker):
+    """Converte o texto livre de peers numa lista limpa, sem duplicados
+    e sem o próprio ticker principal. Não faz nenhuma seleção automática:
+    apenas normaliza o que o utilizador escreveu."""
+    if not raw_text or not raw_text.strip():
+        return [], []
+
+    candidates = [p.strip().upper() for p in raw_text.split(",") if p.strip()]
+
+    seen = set()
+    cleaned = []
+    dropped_self = []
+    for c in candidates:
+        if c == main_ticker:
+            dropped_self.append(c)
+            continue
+        if c not in seen:
+            seen.add(c)
+            cleaned.append(c)
+
+    return cleaned, dropped_self
+
+
 @st.cache_data(show_spinner=False, ttl=3600)
-def fetch_peer_benchmark(ticker_symbol, sector):
-    t = yf.Ticker(ticker_symbol)
-    try:
-        peers_list = t.info.get("recommendedSymbols", [])
-    except Exception:
-        peers_list = []
-
-    if not peers_list:
-        sector_peers = {
-            "Technology": ["MSFT", "AAPL", "GOOGL", "NVDA"],
-            "Healthcare": ["JNJ", "PFE", "UNH", "ABBV"],
-            "Financial Services": ["JPM", "BAC", "WFC", "C"],
-            "Consumer Cyclical": ["AMZN", "TSLA", "HD", "NKE"],
-            "Communication Services": ["META", "DIS", "NFLX", "TMUS"],
-        }
-        peers_list = sector_peers.get(sector, ["AAPL", "MSFT", "GOOGL", "AMZN"])
-
-    peers_list = [p for p in peers_list if p != ticker_symbol][:4]
+def fetch_peer_benchmark(ticker_symbol, peers_list):
+    """Vai buscar os rácios de comparação apenas para os tickers explicitamente
+    fornecidos pelo utilizador. Nenhum peer é sugerido, adivinhado ou
+    preenchido automaticamente — se um ticker falhar, é simplesmente
+    ignorado e reportado, nunca substituído silenciosamente."""
     all_tickers = [ticker_symbol] + peers_list
     comp_data = {}
+    failed_tickers = []
 
     for tk in all_tickers:
-        t = yf.Ticker(tk)
-        inf = t.info
-        bs = t.balance_sheet
-        inc = t.financials
-
         try:
+            t = yf.Ticker(tk)
+            inf = t.info
+            bs = t.balance_sheet
+            inc = t.financials
+
+            if not inf or inf.get("regularMarketPrice") is None and inf.get("currentPrice") is None:
+                # ticker provavelmente inválido / sem dados de mercado
+                if tk != ticker_symbol:
+                    failed_tickers.append(tk)
+                    continue
+
             net_inc = inc.loc["Net Income"].iloc[0] if "Net Income" in inc.index else np.nan
             rev = inc.loc["Total Revenue"].iloc[0] if "Total Revenue" in inc.index else np.nan
             ebitda = inc.loc["EBITDA"].iloc[0] if "EBITDA" in inc.index else np.nan
@@ -308,9 +327,12 @@ def fetch_peer_benchmark(ticker_symbol, sector):
                 "Current Ratio": inf.get("currentRatio", np.nan),
             }
         except Exception:
-            continue
+            if tk != ticker_symbol:
+                failed_tickers.append(tk)
+            else:
+                raise
 
-    return pd.DataFrame(comp_data)
+    return pd.DataFrame(comp_data), failed_tickers
 
 
 def generate_peer_appreciation(ticker_symbol, df_comp):
@@ -398,18 +420,63 @@ page_header(
 
 with st.sidebar:
     st.header("⚙️ Empresa")
-    ticker_input = st.text_input("Ticker", value="AAPL")
+    ticker_input = st.text_input("Ticker a analisar", value="AAPL")
+
+    st.markdown("---")
+    st.header("🏁 Peers para comparação")
+    peers_input = st.text_input(
+        "Tickers dos concorrentes (separados por vírgula)",
+        value="",
+        placeholder="Ex.: MSFT, GOOGL, AMZN",
+        help=f"Máximo de {MAX_PEERS} tickers. Escolhe tu próprio os concorrentes diretos — a aplicação já não sugere peers automaticamente.",
+    )
+
+    main_ticker_upper = ticker_input.strip().upper()
+    peers_list, dropped_self = parse_peer_tickers(peers_input, main_ticker_upper)
+
+    if dropped_self:
+        st.warning(f"⚠️ Removi {', '.join(dropped_self)} da lista de peers, porque coincide com o ticker principal.")
+
+    if len(peers_list) > MAX_PEERS:
+        st.warning(f"⚠️ Indicaste {len(peers_list)} peers; apenas os primeiros {MAX_PEERS} serão usados: {', '.join(peers_list[:MAX_PEERS])}")
+        peers_list = peers_list[:MAX_PEERS]
+
+    if peers_input.strip() and not peers_list:
+        st.error("❌ Nenhum peer válido foi reconhecido nesse texto. Verifica os tickers introduzidos.")
+
+    if not peers_input.strip():
+        st.info("ℹ️ Sem peers indicados — o relatório será gerado sem a secção 7 (Peer Benchmark).")
+    elif peers_list:
+        st.caption(f"Peers a usar: {', '.join(peers_list)}")
+
     analyze_button = st.button("📊 Gerar Relatório Premium", type="primary", use_container_width=True)
 
 if analyze_button:
-    symbol = ticker_input.strip().upper()
+    symbol = main_ticker_upper
     with st.spinner(f"⚡ A extrair demonstrações financeiras e a recalcular indicadores para {symbol}..."):
         try:
             data = fetch_financial_data(symbol)
-            sector = data["info"].get("sector", "Technology")
+            sector = data["info"].get("sector", "—")
             company_name = data["info"].get("longName", symbol)
-            df_peers = fetch_peer_benchmark(symbol, sector)
-            appreciation_html = generate_peer_appreciation(symbol, df_peers)
+
+            df_peers = pd.DataFrame()
+            appreciation_html = "Sem peers indicados — não foi possível gerar a análise comparativa automatizada."
+            peer_section_html = ""
+
+            if peers_list:
+                df_peers, failed_tickers = fetch_peer_benchmark(symbol, peers_list)
+
+                if failed_tickers:
+                    st.warning(f"⚠️ Não foi possível obter dados para: {', '.join(failed_tickers)}. Foram excluídos da comparação.")
+
+                if df_peers.shape[1] <= 1:
+                    st.error("❌ Nenhum dos peers indicados devolveu dados válidos. A secção de benchmark foi omitida.")
+                else:
+                    appreciation_html = generate_peer_appreciation(symbol, df_peers)
+                    peer_section_html = f"""
+                <div class='section-title'>7. Peer Benchmark & Análise Setorial Direta (peers escolhidos manualmente)</div>
+                {format_df_to_html(df_peers)}
+                """
 
             html_body = f"""
             <div class='report-container'>
@@ -441,10 +508,7 @@ if analyze_button:
 
                 <div class='section-title'>6. Métricas de Mercado, Volatilidade e Risco (5 Anos)</div>
                 {format_df_to_html(data['market'])}
-
-                <div class='section-title'>7. Peer Benchmark & Análise Setorial Direta ({sector})</div>
-                {format_df_to_html(df_peers)}
-
+                {peer_section_html}
                 <div class='section-title'>8. Conclusão & Síntese do Analista</div>
                 <div class='analysis-card'>
                     {appreciation_html}
@@ -455,7 +519,10 @@ if analyze_button:
             full_html = f"<!DOCTYPE html><html><head><meta charset='utf-8'><title>Relatório {symbol}</title>{STYLE_CSS}</head><body style='background:#f1f5f9; padding:20px;'>{html_body}</body></html>"
 
             # Número de linhas de tabela aproximado, para dimensionar o iframe sem cortar conteúdo
-            num_rows = sum(len(df.index) for df in [data['val'], data['growth'], data['profitability'], data['leverage'], data['liquidity'], data['market'], df_peers])
+            tables_for_sizing = [data['val'], data['growth'], data['profitability'], data['leverage'], data['liquidity'], data['market']]
+            if not df_peers.empty:
+                tables_for_sizing.append(df_peers)
+            num_rows = sum(len(df.index) for df in tables_for_sizing)
             estimated_height = 1400 + num_rows * 42
             components.html(full_html, height=estimated_height, scrolling=True)
 
@@ -470,4 +537,4 @@ if analyze_button:
         except Exception as e:
             st.error(f"❌ Erro ao gerar análise para {symbol}: {e}")
 else:
-    st.info("👈 Introduz um ticker na barra lateral e clica em **Gerar Relatório Premium** para começar.")
+    st.info("👈 Introduz o ticker principal e (opcionalmente) os peers na barra lateral e clica em **Gerar Relatório Premium** para começar.")
