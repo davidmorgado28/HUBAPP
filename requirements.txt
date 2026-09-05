@@ -5,7 +5,6 @@ numpy
 plotly
 scipy
 matplotlib
-google-generativeai
 
 # Adiciona aqui quaisquer bibliotecas extra usadas pelas apps 3 e 4
 # (ex: scikit-learn, statsmodels, requests, openpyxl, etc.)
