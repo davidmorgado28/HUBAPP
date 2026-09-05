@@ -5,9 +5,7 @@
 #
 # ATUALIZAÇÃO: benchmark selecionável (S&P 500, NASDAQ, Dow, PSI, DAX, CAC,
 # FTSE, IBEX, etc. ou ticker personalizado), Stress Test, diversificação
-# setorial/geográfica, tabela cruzada Cap Size x Estilo, validação de pesos
-# a somarem 100%, e aviso explícito quando um ticker limita a data de início
-# efetiva da simulação (em vez de cortar os dados silenciosamente).
+# setorial/geográfica, e tabela cruzada Cap Size x Estilo.
 # ==============================================================================
 
 import sys
@@ -43,15 +41,14 @@ LUMINARA_PALETTE = [
 # BENCHMARKS DISPONÍVEIS
 # Tickers de índice conforme Yahoo Finance / yfinance. Alguns índices europeus
 # mais pequenos (ex. PSI) têm por vezes histórico mais curto ou lacunas —
-# usa a opção "Personalizado" se o ticker predefinido não funcionar bem, e
-# fica atento ao aviso de "data de início efetiva" que a app agora mostra.
+# usa a opção "Personalizado" se o ticker predefinido não funcionar bem.
 # ------------------------------------------------------------------------------
 BENCHMARK_OPTIONS = {
     "S&P 500 (EUA)": "^GSPC",
     "Nasdaq Composite (EUA)": "^IXIC",
     "Dow Jones Industrial Average (EUA)": "^DJI",
     "Russell 2000 (EUA, small caps)": "^RUT",
-    "PSI (Portugal)": "^PSI20",
+    "PSI (Portugal)": "PSI20.LS",
     "IBEX 35 (Espanha)": "^IBEX",
     "CAC 40 (França)": "^FCHI",
     "DAX (Alemanha)": "^GDAXI",
@@ -94,23 +91,9 @@ def download_prices(all_tickers, start_date):
     if isinstance(adj_close, pd.Series):
         adj_close = adj_close.to_frame(all_tickers[0])
 
-    # ---- Deteção explícita de qual ticker limita a data de início ----
-    # Em vez de fazer dropna() cegamente (o que corta TODO o histórico para a
-    # janela em que o ticker com menos dados também tem valores válidos),
-    # calculamos a primeira data válida de cada ticker e identificamos
-    # exatamente quem está a constranger a simulação.
-    first_valid_dates = {}
-    for col in raw_close.columns:
-        fv = raw_close[col].first_valid_index()
-        first_valid_dates[col] = fv
-
-    valid_dates = [d for d in first_valid_dates.values() if d is not None]
-    effective_start = max(valid_dates) if valid_dates else None
-
     raw_close = raw_close.ffill().dropna()
     adj_close = adj_close.ffill().dropna()
-
-    return raw_close, adj_close, first_valid_dates, effective_start
+    return raw_close, adj_close
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -305,7 +288,7 @@ def build_stress_test_table(df_results, benchmark_label, top_n=5):
 def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dca, benchmark_ticker, benchmark_label):
     all_tickers = list(dict.fromkeys(tickers + [benchmark_ticker]))
 
-    raw_close, adj_close, first_valid_dates, effective_start = download_prices(all_tickers, start_date)
+    raw_close, adj_close = download_prices(all_tickers, start_date)
 
     missing_tickers = [t for t in all_tickers if t not in raw_close.columns]
     if missing_tickers:
@@ -322,28 +305,6 @@ def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dc
     if raw_close.empty or len(raw_close) < 2:
         st.error("❌ Dados insuficientes para o período selecionado.")
         return None
-
-    # ---- Aviso explícito se a data de início pedida não pode ser respeitada ----
-    requested_start = pd.Timestamp(start_date)
-    if effective_start is not None and effective_start > requested_start + pd.Timedelta(days=5):
-        # Identificar o(s) ticker(s) cujo histórico só começa depois da data pedida
-        limiting_tickers = [
-            t for t, d in first_valid_dates.items()
-            if d is not None and d > requested_start + pd.Timedelta(days=5)
-        ]
-        limiting_str = ", ".join(
-            f"{t} (dados desde {d.strftime('%d/%m/%Y')})"
-            for t, d in first_valid_dates.items() if t in limiting_tickers
-        )
-        st.warning(
-            f"⚠️ Pediste a simulação a partir de {requested_start.strftime('%d/%m/%Y')}, mas o(s) "
-            f"seguinte(s) ticker(s) só têm dados no Yahoo Finance a partir de mais tarde: {limiting_str}. "
-            f"A simulação foi automaticamente ajustada para começar em "
-            f"**{effective_start.strftime('%d/%m/%Y')}** (a data mais antiga em que todos os ativos, "
-            "incluindo o benchmark, têm dados disponíveis). Se precisas de histórico mais antigo, troca "
-            "o ticker limitador — por exemplo, para o benchmark PSI, o índice `^PSI20` costuma ter um "
-            "histórico bastante mais longo do que ETFs equivalentes listados em Lisboa."
-        )
 
     portfolio_prices = adj_close[tickers]
     benchmark_prices = adj_close[benchmark_ticker]
@@ -623,8 +584,8 @@ with st.sidebar:
     if BENCHMARK_OPTIONS[benchmark_choice] is None:
         custom_ticker = st.text_input(
             "Ticker Yahoo Finance do benchmark",
-            "^PSI20",
-            help="Indica o símbolo exato como aparece no Yahoo Finance (ex.: ^PSI20, ^BVSP, ^MERV).",
+            "PSI20.LS",
+            help="Indica o símbolo exato como aparece no Yahoo Finance (ex.: PSI20.LS, ^BVSP, ^MERV).",
         )
         benchmark_ticker = custom_ticker.strip().upper()
         benchmark_label = benchmark_ticker
