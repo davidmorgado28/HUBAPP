@@ -122,6 +122,32 @@ def fetch_affo_inputs(ticker_symbol):
 
 
 @st.cache_data(ttl=3600)
+def fetch_market_return(lookback_years):
+    """
+    Rm = CAGR histórico do S&P500 (^GSPC) ao longo do período escolhido.
+    Recalculado sempre que a página corre (sujeito a cache de 1h para não
+    martelar a Yahoo Finance em cada rerun), portanto reflete sempre o
+    estado atual do mercado em vez de um valor fixo assumido.
+    """
+    end = pd.Timestamp.today()
+    start = end - pd.DateOffset(years=lookback_years)
+    hist = yf.Ticker("^GSPC").history(start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"))
+
+    if hist is None or hist.empty or len(hist) < 2:
+        return None
+
+    start_price = float(hist["Close"].iloc[0])
+    end_price = float(hist["Close"].iloc[-1])
+    n_years = (hist.index[-1] - hist.index[0]).days / 365.25
+
+    if start_price <= 0 or n_years <= 0:
+        return None
+
+    cagr = (end_price / start_price) ** (1 / n_years) - 1
+    return float(cagr) * 100
+
+
+@st.cache_data(ttl=3600)
 def fetch_capm_inputs(ticker_symbol):
     tk = yf.Ticker(ticker_symbol)
     info = tk.info
@@ -201,7 +227,8 @@ def generate_html_report(ticker, company_name, affo_df, growth_hist_df, growth_p
   <table>
     <tr><th>Beta</th><td>{capm['beta']:.3f}</td></tr>
     <tr><th>Taxa Sem Risco</th><td>{capm['rf']:.2f}%</td></tr>
-    <tr><th>Prémio de Risco de Mercado</th><td>{capm['erp']:.2f}%</td></tr>
+    <tr><th>Rm — CAGR histórico S&amp;P500 ({capm['lookback_years']} anos)</th><td>{capm['rm']:.2f}%</td></tr>
+    <tr><th>Prémio de Risco de Mercado (Rm − Rf)</th><td>{capm['erp']:.2f}%</td></tr>
     <tr><th>Custo de Capital Próprio (Ke)</th><td>{capm['ke']:.2f}%</td></tr>
   </table>
 
@@ -353,10 +380,14 @@ growth_proj_edited = st.data_editor(
 # 4. CAPM
 # ---------------------------------------------------------------------------
 st.markdown("### 4. Custo de Capital Próprio (CAPM)")
+st.caption(
+    "O prémio de risco de mercado (ERP) é calculado dinamicamente a partir do "
+    "retorno histórico (CAGR) do S&P500, recalculado sempre que simulas."
+)
 
 capm_defaults = st.session_state["capm_defaults"]
 
-capm_col1, capm_col2, capm_col3, capm_col4 = st.columns(4)
+capm_col1, capm_col2, capm_col3 = st.columns(3)
 with capm_col1:
     beta_input = st.number_input("Beta", value=round(capm_defaults["beta"], 3), step=0.05, key="beta_input")
 with capm_col2:
@@ -364,14 +395,30 @@ with capm_col2:
         "Taxa Sem Risco (%) — 10Y Treasury", value=round(capm_defaults["rf"], 2), step=0.05, key="rf_input"
     )
 with capm_col3:
-    erp_input = st.number_input(
-        "Prémio de Risco de Mercado (%)",
-        value=5.5,
-        step=0.1,
-        key="erp_input",
-        help="Estimativa editável, não obtida automaticamente. Referência comum: 4.5%-6%.",
+    lookback_years = st.selectbox(
+        "Período histórico do S&P500 (anos)",
+        options=[5, 10, 15, 20, 30],
+        index=1,
+        key="lookback_years",
     )
+
+rm_val = fetch_market_return(lookback_years)
+if rm_val is None:
+    st.warning(
+        "Não foi possível obter dados históricos do S&P500. A usar prémio de "
+        "risco de mercado de referência (5,5%)."
+    )
+    rm_val = rf_input + 5.5
+    erp_input = 5.5
+else:
+    erp_input = rm_val - rf_input
+
+capm_col4, capm_col5, capm_col6 = st.columns(3)
 with capm_col4:
+    st.metric("Rm — CAGR histórico S&P500", f"{rm_val:.2f}%")
+with capm_col5:
+    st.metric("ERP (Rm − Rf)", f"{erp_input:.2f}%")
+with capm_col6:
     ke = rf_input + beta_input * erp_input
     st.metric("Ke", f"{ke:.2f}%")
 
@@ -431,7 +478,14 @@ if simulate_clicked:
             "affo_df": affo_edited.copy(),
             "growth_hist_df": growth_hist_df.copy(),
             "growth_proj_df": growth_proj_edited.copy(),
-            "capm": {"beta": beta_input, "rf": rf_input, "erp": erp_input, "ke": ke},
+            "capm": {
+                "beta": beta_input,
+                "rf": rf_input,
+                "rm": rm_val,
+                "erp": erp_input,
+                "ke": ke,
+                "lookback_years": lookback_years,
+            },
             "tgr_map": tgr_map,
             "current_price": st.session_state.get("current_price"),
         }
