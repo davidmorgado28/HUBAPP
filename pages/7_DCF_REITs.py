@@ -1,543 +1,580 @@
-"""
-DCF para REITs — Valorização baseada em AFFO por Ação
-Fluxo: Pesquisar ticker -> tabelas históricas + inputs editáveis -> Simular -> resultados + download HTML
+# ==============================================================================
+# 🏢 MODELO DCF PARA REITS (AFFO) — Aplicação Streamlit
+# Segue o mesmo template do Modelo DCF (FCFF): sidebar de ticker, CAPM/ERP
+# dinâmico calculado a partir do S&P500, pressupostos editáveis por cenário
+# e relatório HTML estilizado (dark/cards) para download.
+# ==============================================================================
 
-Segue o padrão do DCF Valuation Model existente no hub: fetch só ao clicar em
-Pesquisar (sem refetch a cada interação), data_editor sem sync-back manual
-para session_state, resultados só calculados ao clicar em Simular.
+import sys
+import warnings
+from pathlib import Path
 
-Renomear para a tua convenção numerada+emoji (ex: '7_🏢_DCF_REITs.py') antes
-de colocar em pages/.
-"""
-
-import io
-from datetime import datetime
+warnings.filterwarnings("ignore")
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 import yfinance as yf
 
-# ---------------------------------------------------------------------------
-# Tema (com fallback, seguindo o padrão do hub)
-# ---------------------------------------------------------------------------
-try:
-    from theme import inject_theme, page_header, NAVY_950, GOLD_500, IVORY
-except ImportError:
-    NAVY_950 = "#0A1128"
-    GOLD_500 = "#D4AF37"
-    IVORY = "#FFFFF0"
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from theme import inject_theme, page_header
 
-    def inject_theme():
-        pass
-
-    def page_header(title, subtitle=None):
-        st.title(title)
-        if subtitle:
-            st.caption(subtitle)
-
-
-st.set_page_config(page_title="DCF REITs · AFFO", page_icon="🏢", layout="wide")
-inject_theme()
-page_header(
-    "DCF para REITs",
-    "Valorização por Adjusted Funds From Operations (AFFO) por ação",
+st.set_page_config(
+    page_title="DCF para REITs",
+    page_icon="🏢",
+    layout="wide",
 )
 
-N_HIST_YEARS = 5
-N_PROJ_YEARS = 5
-SCENARIOS = ["Pessimista", "Base", "Otimista"]
+inject_theme()
 
-# ---------------------------------------------------------------------------
-# Funções de fetch (cacheadas — só correm quando chamadas explicitamente)
-# ---------------------------------------------------------------------------
-@st.cache_data(ttl=3600)
-def fetch_affo_inputs(ticker_symbol):
+page_header(
+    "🏢",
+    "Modelo DCF para REITs (AFFO)",
+    "Valuação por Adjusted Funds From Operations em 3 cenários (Base / Otimista / Pessimista), "
+    "com Ke calculado dinamicamente via CAPM e relatório HTML estilizado para download.",
+)
+
+SCENARIOS = ["Base", "Otimista", "Pessimista"]
+YEAR_COLS = [f"Ano {i}" for i in range(1, 6)]
+
+# ------------------------------------------------------------------------------
+# 1. CAPM DINÂMICO (idêntico ao Modelo DCF — mesmas funções, mesma lógica)
+# ------------------------------------------------------------------------------
+@st.cache_data(show_spinner=False, ttl=3600)
+def get_risk_free_rate():
+    try:
+        tnx = yf.Ticker("^TNX")
+        hist = tnx.history(period="5d")
+        if not hist.empty:
+            return float(hist["Close"].iloc[-1]) / 100.0
+    except Exception:
+        pass
+    return 0.0425
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def get_sp500_historical_return(years=20):
+    try:
+        sp500 = yf.Ticker("^GSPC")
+        hist = sp500.history(period=f"{years}y")
+        if not hist.empty:
+            start_price = hist["Close"].iloc[0]
+            end_price = hist["Close"].iloc[-1]
+            num_years = (hist.index[-1] - hist.index[0]).days / 365.25
+            return (end_price / start_price) ** (1 / num_years) - 1.0
+    except Exception:
+        pass
+    return 0.098
+
+
+def calculate_capm_reit(ticker_obj, rf_rate):
     """
-    FFO = Resultado Líquido + Depreciação & Amortização
-    AFFO = FFO - Capex (proxy de capex recorrente/manutenção)
-
-    Limitação explícita: yfinance não expõe separadamente ganhos/perdas em
-    vendas de imóveis nem o ajuste de straight-line rent -> AFFO aproximado.
+    Ke = Rf + Beta * ERP_dinamico, onde ERP_dinamico = max(3.5%, Rm_S&P500 - Rf).
+    Não há componente de dívida — AFFO/ação é já um fluxo de caixa ao nível
+    do acionista, por isso descontamos a Ke (custo de capital próprio), não
+    ao WACC.
     """
-    tk = yf.Ticker(ticker_symbol)
-    financials = tk.financials
-    cashflow = tk.cashflow
+    sp500_return = get_sp500_historical_return(years=20)
+    erp_dynamic = max(0.035, sp500_return - rf_rate)
 
-    if financials is None or financials.empty or cashflow is None or cashflow.empty:
-        return None, "Não foi possível obter dados financeiros para este ticker."
+    info = ticker_obj.info
+    beta = info.get("beta", 1.0) or 1.0
+    ke = rf_rate + (beta * erp_dynamic)
 
-    def get_row(df, candidates):
-        for name in candidates:
-            if name in df.index:
-                return df.loc[name]
-        return None
+    return ke, beta, erp_dynamic, sp500_return
 
-    net_income = get_row(financials, ["Net Income", "Net Income Common Stockholders"])
-    da = get_row(cashflow, ["Depreciation And Amortization", "Depreciation Amortization Depletion"])
-    capex = get_row(cashflow, ["Capital Expenditure", "Purchase Of PPE"])
-    diluted_shares = get_row(financials, ["Diluted Average Shares", "Basic Average Shares"])
 
-    missing = []
-    if net_income is None:
-        missing.append("Resultado Líquido")
-    if da is None:
-        missing.append("Depreciação & Amortização")
-    if diluted_shares is None:
-        missing.append("Ações Diluídas")
+# ------------------------------------------------------------------------------
+# 2. FÓRMULA COMPLETA DE FFO / AFFO
+# ------------------------------------------------------------------------------
+def _get_row(df, candidates):
+    for name in candidates:
+        if name in df.index:
+            return df.loc[name]
+    return None
 
-    if missing:
-        return None, f"Dados em falta na Yahoo Finance: {', '.join(missing)}."
 
-    years = sorted(list(net_income.index)[:N_HIST_YEARS])
+@st.cache_data(show_spinner=False, ttl=3600)
+def extract_reit_financial_data(ticker_symbol):
+    """
+    FFO (definição NAREIT, aproximada com os dados disponíveis via yfinance):
+        FFO = Resultado Líquido
+            + Depreciação & Amortização
+            + Imparidades de ativos depreciáveis
+            +/- Ajuste de Ganhos/Perdas em vendas de investimentos/imóveis
+              (a cashflow statement já traz este ajuste com o sinal correto
+              para remover o efeito não-recorrente do resultado líquido)
 
-    rows = []
-    for year in years:
-        ni = net_income.get(year, np.nan)
-        d_a = da.get(year, np.nan) if da is not None else np.nan
-        cpx = capex.get(year, np.nan) if capex is not None else 0.0
-        shares = diluted_shares.get(year, np.nan)
+    AFFO = FFO
+            + Compensação em ações (não-cash)
+            + Amortização de custos de financiamento diferidos (não-cash)
+            - CapEx de manutenção (recorrente)
+            - Ajuste de "straight-line rent" (não disponível via yfinance —
+              assumido como 0, com aviso explícito ao utilizador)
+
+    Sempre que uma linha não existe no yfinance para este ticker, o
+    respetivo componente é tratado como 0 e assinalado na UI, em vez de
+    a aplicação falhar silenciosamente.
+    """
+    ticker = yf.Ticker(ticker_symbol)
+    fin = ticker.financials
+    cf = ticker.cashflow
+    info = ticker.info
+
+    if fin is None or fin.empty or cf is None or cf.empty:
+        raise ValueError("Não foi possível obter dados financeiros para este Ticker.")
+
+    # Interseção de datas entre as duas demonstrações, para evitar KeyErrors
+    common_dates = sorted(set(fin.columns) & set(cf.columns))[-5:]
+    if len(common_dates) < 2:
+        raise ValueError("Histórico financeiro insuficiente (menos de 2 anos em comum).")
+
+    net_income_row = _get_row(fin, ["Net Income", "Net Income Common Stockholders"])
+    da_row = _get_row(cf, ["Depreciation And Amortization", "Depreciation Amortization Depletion"])
+    impairment_row = _get_row(cf, ["Impairment Of Capital Assets", "Asset Impairment Charge"])
+    gain_loss_row = _get_row(
+        cf, ["Gain Loss On Investment Securities", "Net Investment Purchase And Sale", "Gain On Sale Of Business"]
+    )
+    sbc_row = _get_row(cf, ["Stock Based Compensation"])
+    financing_amort_row = _get_row(
+        cf, ["Amortization Of Financing Costs", "Amortization Of Debt Discount Premium", "Other Amortization"]
+    )
+    maintenance_capex_row = _get_row(cf, ["Purchase Of PPE"])
+    total_capex_row = _get_row(cf, ["Capital Expenditure", "Capital Expenditures"])
+    diluted_shares_row = _get_row(fin, ["Diluted Average Shares", "Basic Average Shares"])
+
+    if net_income_row is None or da_row is None or diluted_shares_row is None:
+        raise ValueError(
+            "Faltam campos essenciais (Resultado Líquido, D&A ou Ações Diluídas) "
+            "para calcular o FFO/AFFO deste ticker."
+        )
+
+    capex_is_total_fallback = maintenance_capex_row is None and total_capex_row is not None
+    capex_row = maintenance_capex_row if maintenance_capex_row is not None else total_capex_row
+
+    rows_out = {
+        "Resultado Líquido ($M)": [],
+        "+ D&A ($M)": [],
+        "+ Imparidades ($M)": [],
+        "+/- Ganhos/Perdas em Vendas ($M)": [],
+        "= FFO ($M)": [],
+        "+ Comp. em Ações (SBC) ($M)": [],
+        "+ Amort. Custos Financiamento ($M)": [],
+        "- CapEx de Manutenção ($M)": [],
+        "= AFFO ($M)": [],
+    }
+    shares_out = []
+    affo_per_share_out = []
+    years_used = []
+
+    for date in common_dates:
+        ni = net_income_row.get(date, np.nan)
+        d_a = da_row.get(date, np.nan)
+        shares = diluted_shares_row.get(date, np.nan)
 
         if pd.isna(ni) or pd.isna(d_a) or pd.isna(shares) or shares == 0:
             continue
 
-        cpx = 0.0 if pd.isna(cpx) else abs(cpx)
-        ffo = ni + d_a
-        affo = ffo - cpx
+        impairment = impairment_row.get(date, 0.0) if impairment_row is not None else 0.0
+        impairment = 0.0 if pd.isna(impairment) else abs(impairment)
+
+        gain_loss_adj = gain_loss_row.get(date, 0.0) if gain_loss_row is not None else 0.0
+        gain_loss_adj = 0.0 if pd.isna(gain_loss_adj) else gain_loss_adj
+
+        sbc = sbc_row.get(date, 0.0) if sbc_row is not None else 0.0
+        sbc = 0.0 if pd.isna(sbc) else sbc
+
+        fin_amort = financing_amort_row.get(date, 0.0) if financing_amort_row is not None else 0.0
+        fin_amort = 0.0 if pd.isna(fin_amort) else fin_amort
+
+        maint_capex = capex_row.get(date, 0.0) if capex_row is not None else 0.0
+        maint_capex = 0.0 if pd.isna(maint_capex) else abs(maint_capex)
+
+        ffo = ni + d_a + impairment + gain_loss_adj
+        affo = ffo + sbc + fin_amort - maint_capex
         affo_per_share = affo / shares
 
-        rows.append({"Ano": pd.Timestamp(year).year, "AFFO/Ação (€)": round(float(affo_per_share), 4)})
+        years_used.append(date)
+        rows_out["Resultado Líquido ($M)"].append(ni / 1e6)
+        rows_out["+ D&A ($M)"].append(d_a / 1e6)
+        rows_out["+ Imparidades ($M)"].append(impairment / 1e6)
+        rows_out["+/- Ganhos/Perdas em Vendas ($M)"].append(gain_loss_adj / 1e6)
+        rows_out["= FFO ($M)"].append(ffo / 1e6)
+        rows_out["+ Comp. em Ações (SBC) ($M)"].append(sbc / 1e6)
+        rows_out["+ Amort. Custos Financiamento ($M)"].append(fin_amort / 1e6)
+        rows_out["- CapEx de Manutenção ($M)"].append(-maint_capex / 1e6)
+        rows_out["= AFFO ($M)"].append(affo / 1e6)
+        shares_out.append(shares / 1e6)
+        affo_per_share_out.append(affo_per_share)
 
-    if not rows:
-        return None, "Não foi possível calcular AFFO/ação com os dados disponíveis."
+    if len(years_used) < 2:
+        raise ValueError("Dados insuficientes para calcular pelo menos 2 anos de AFFO/ação.")
 
-    warning = None
-    if len(rows) < N_HIST_YEARS:
-        warning = (
-            f"Apenas {len(rows)} de {N_HIST_YEARS} anos com dados completos estão "
-            f"disponíveis via Yahoo Finance. Completa os restantes manualmente."
-        )
+    col_labels = [pd.Timestamp(d).year for d in years_used]
+    breakdown_df = pd.DataFrame(rows_out, index=col_labels).T
 
-    return pd.DataFrame(rows), warning
+    affo_per_share_series = pd.Series(affo_per_share_out, index=col_labels)
+    growth_series = affo_per_share_series.pct_change().fillna(0) * 100
 
+    affo_share_df = pd.DataFrame(
+        {
+            "AFFO / Ação ($)": affo_per_share_series,
+            "Crescimento AFFO/Ação (%)": growth_series,
+            "Ações Diluídas (M)": pd.Series(shares_out, index=col_labels),
+        }
+    ).T
 
-@st.cache_data(ttl=3600)
-def fetch_market_return(lookback_years):
-    """
-    Rm = CAGR histórico do S&P500 (^GSPC) ao longo do período escolhido.
-    Recalculado sempre que a página corre (sujeito a cache de 1h para não
-    martelar a Yahoo Finance em cada rerun), portanto reflete sempre o
-    estado atual do mercado em vez de um valor fixo assumido.
-    """
-    end = pd.Timestamp.today()
-    start = end - pd.DateOffset(years=lookback_years)
-    hist = yf.Ticker("^GSPC").history(start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"))
+    rf_rate = get_risk_free_rate()
+    ke_base, beta, erp_dynamic, sp500_return = calculate_capm_reit(ticker, rf_rate)
 
-    if hist is None or hist.empty or len(hist) < 2:
-        return None
+    current_price = info.get("currentPrice") or info.get("regularMarketPrice") or 0.0
+    company_name = info.get("longName", ticker_symbol.upper())
 
-    start_price = float(hist["Close"].iloc[0])
-    end_price = float(hist["Close"].iloc[-1])
-    n_years = (hist.index[-1] - hist.index[0]).days / 365.25
+    last_growth = growth_series.iloc[-1] if len(growth_series) else 2.0
 
-    if start_price <= 0 or n_years <= 0:
-        return None
-
-    cagr = (end_price / start_price) ** (1 / n_years) - 1
-    return float(cagr) * 100
-
-
-@st.cache_data(ttl=3600)
-def fetch_capm_inputs(ticker_symbol):
-    tk = yf.Ticker(ticker_symbol)
-    info = tk.info
-
-    beta = info.get("beta", None)
-    if beta is None:
-        beta = 1.0
-
-    try:
-        rf_hist = yf.Ticker("^TNX").history(period="5d")
-        risk_free_rate = float(rf_hist["Close"].iloc[-1]) / 100
-    except Exception:
-        risk_free_rate = 0.04
-
-    current_price = info.get("currentPrice") or info.get("regularMarketPrice")
-    company_name = info.get("longName") or info.get("shortName") or ticker_symbol
-
-    return float(beta), float(risk_free_rate), current_price, company_name
+    return {
+        "ticker": ticker_symbol.upper(),
+        "company_name": company_name,
+        "breakdown_df": breakdown_df,
+        "affo_share_df": affo_share_df,
+        "current_price": current_price,
+        "last_affo_per_share": affo_per_share_series.iloc[-1],
+        "last_growth_pct": max(-20.0, min(30.0, last_growth)),
+        "capex_is_total_fallback": capex_is_total_fallback,
+        "missing_components": {
+            "Imparidades": impairment_row is None,
+            "Ganhos/Perdas em Vendas": gain_loss_row is None,
+            "SBC": sbc_row is None,
+            "Amort. Custos Financiamento": financing_amort_row is None,
+            "CapEx de Manutenção (separado do CapEx total)": maintenance_capex_row is None,
+        },
+        "rf_rate": rf_rate,
+        "beta": beta,
+        "erp_dynamic": erp_dynamic,
+        "sp500_return": sp500_return,
+        "ke_base": ke_base,
+    }
 
 
-def generate_html_report(ticker, company_name, affo_df, growth_hist_df, growth_proj_df,
-                          capm, tgr_map, results_df, current_price):
-    date_str = datetime.now().strftime("%d/%m/%Y %H:%M")
+# ------------------------------------------------------------------------------
+# 3. GERADOR DO DASHBOARD HTML ESTILIZADO (mesmo layout dark/cards do modelo FCFF)
+# ------------------------------------------------------------------------------
+def generate_styled_html_report_reit(data, results_summary, tables_dict):
+    ticker = data["ticker"]
+    company = data["company_name"]
+    price = data["current_price"]
 
-    def df_to_html_rows(df):
-        return "".join(
-            "<tr>" + "".join(f"<td>{v}</td>" for v in row) + "</tr>"
-            for row in df.itertuples(index=False)
-        )
+    cards_html = ""
+    for r in results_summary:
+        scen = r["Cenário"]
+        target_p = r["Implied Share Price ($)"]
+        up = r["Upside / Downside (%)"]
+        up_v = float(up.replace("%", "").replace("+", ""))
+        color = "#10B981" if up_v >= 0 else "#EF4444"
 
-    results_rows = ""
-    for _, r in results_df.iterrows():
-        value_display = r["Valor Justo/Ação (€)"]
-        if value_display is None:
-            value_display = r.get("Erro", "n/d")
+        cards_html += f"""
+        <div class="card">
+            <div class="card-tag">{scen.upper()}</div>
+            <div class="card-title">Implied Target Price</div>
+            <div class="card-value">{target_p}</div>
+            <div class="card-sub" style="color: {color};">
+                <span>{up}</span> vs Preço Atual (${price:.2f})
+            </div>
+            <div class="card-details">
+                <div>Ke: <b>{r['Ke']}</b></div>
+                <div>TGR: <b>{r['TGR']}</b></div>
+                <div>PV AFFO: <b>{r['PV AFFO Sum ($)']}</b></div>
+            </div>
+        </div>
+        """
+
+    projections_tables_html = ""
+    for scen in SCENARIOS:
+        df = tables_dict[scen]
+        table_rows = ""
+        for idx, row in df.iterrows():
+            table_rows += f"<tr><td class='row-label'>{idx}</td>"
+            for val in row:
+                table_rows += f"<td>${val:,.2f}</td>"
+            table_rows += "</tr>"
+
+        projections_tables_html += f"""
+        <div class="section-card">
+            <h3 class="section-subtitle">Projeções de AFFO/Ação ($) — Cenário {scen}</h3>
+            <table class="custom-table">
+                <thead>
+                    <tr>
+                        <th>Métrica</th>
+                        <th>Ano 1</th><th>Ano 2</th><th>Ano 3</th><th>Ano 4</th><th>Ano 5</th>
+                    </tr>
+                </thead>
+                <tbody>{table_rows}</tbody>
+            </table>
+        </div>
+        """
+
+    hist_abs_rows = ""
+    for idx, row in data["breakdown_df"].iterrows():
+        hist_abs_rows += f"<tr><td class='row-label'>{idx}</td>" + "".join([f"<td>${v:,.2f}</td>" for v in row]) + "</tr>"
+    hist_abs_years = list(data["breakdown_df"].columns)
+
+    hist_share_rows = ""
+    for idx, row in data["affo_share_df"].iterrows():
+        if "%" in idx:
+            hist_share_rows += f"<tr><td class='row-label'>{idx}</td>" + "".join([f"<td>{v:.2f}%</td>" for v in row]) + "</tr>"
+        elif "Ações" in idx:
+            hist_share_rows += f"<tr><td class='row-label'>{idx}</td>" + "".join([f"<td>{v:,.1f}M</td>" for v in row]) + "</tr>"
         else:
-            value_display = f"€{value_display:.2f}"
-        upside_display = ""
-        if current_price and isinstance(r["Valor Justo/Ação (€)"], (int, float)):
-            upside = (r["Valor Justo/Ação (€)"] / current_price - 1) * 100
-            upside_display = f"{upside:+.1f}%"
-        results_rows += f"<tr><td>{r['Cenário']}</td><td>{value_display}</td><td>{upside_display}</td></tr>"
+            hist_share_rows += f"<tr><td class='row-label'>{idx}</td>" + "".join([f"<td>${v:.4f}</td>" for v in row]) + "</tr>"
+    hist_share_years = list(data["affo_share_df"].columns)
 
-    html = f"""
-<!DOCTYPE html>
-<html lang="pt">
-<head>
-<meta charset="UTF-8">
-<title>DCF REIT — {ticker}</title>
-<style>
-  body {{ font-family: 'Segoe UI', Arial, sans-serif; background: {IVORY}; color: {NAVY_950}; margin: 0; padding: 40px; }}
-  .container {{ max-width: 900px; margin: 0 auto; }}
-  h1 {{ color: {NAVY_950}; border-bottom: 3px solid {GOLD_500}; padding-bottom: 12px; }}
-  h2 {{ color: {NAVY_950}; margin-top: 36px; border-left: 4px solid {GOLD_500}; padding-left: 10px; }}
-  table {{ width: 100%; border-collapse: collapse; margin-top: 12px; }}
-  th {{ background: {NAVY_950}; color: {GOLD_500}; padding: 10px; text-align: left; }}
-  td {{ padding: 8px 10px; border-bottom: 1px solid #ddd; }}
-  .meta {{ color: #555; font-size: 0.9em; }}
-  .footer {{ margin-top: 40px; font-size: 0.8em; color: #888; }}
-</style>
-</head>
-<body>
-<div class="container">
-  <h1>Luminara Capital — DCF REIT: {ticker}</h1>
-  <p class="meta">{company_name} · Relatório gerado em {date_str}</p>
+    html_template = f"""
+    <!DOCTYPE html>
+    <html lang="pt">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>DCF REIT (AFFO) — {company} ({ticker})</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+        <style>
+            :root {{
+                --bg-primary: #05070F; --bg-card: #0D1230; --text-main: #F5F5F0;
+                --text-muted: #A8A8B8; --accent-blue: #D4AF37; --accent-green: #10B981;
+                --accent-red: #EF4444; --border-color: #2A2F52;
+            }}
+            body {{ font-family: 'Inter', sans-serif; background-color: var(--bg-primary); color: var(--text-main);
+                margin: 0; padding: 40px 20px; display: flex; justify-content: center; }}
+            .container {{ max-width: 1200px; width: 100%; }}
+            .header {{ display: flex; justify-content: space-between; align-items: center;
+                border-bottom: 2px solid var(--border-color); padding-bottom: 20px; margin-bottom: 30px; }}
+            .header h1 {{ font-size: 28px; font-weight: 800; margin: 0; color: #FFFFFF; }}
+            .header .ticker-badge {{ background: rgba(212, 175, 55, 0.15); color: var(--accent-blue);
+                padding: 4px 12px; border-radius: 6px; font-size: 14px; font-weight: 700; }}
+            .header .price-tag {{ font-size: 16px; color: var(--text-muted); }}
+            .header .price-tag b {{ color: #FFFFFF; font-size: 20px; }}
+            .cards-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+                gap: 20px; margin-bottom: 35px; }}
+            .card {{ background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px;
+                padding: 24px; position: relative; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); }}
+            .card-tag {{ position: absolute; top: 20px; right: 20px; font-size: 11px; font-weight: 800;
+                background: #334155; color: var(--accent-blue); padding: 2px 8px; border-radius: 4px; letter-spacing: 0.5px; }}
+            .card-title {{ font-size: 13px; color: var(--text-muted); text-transform: uppercase;
+                letter-spacing: 0.5px; margin-bottom: 8px; }}
+            .card-value {{ font-size: 34px; font-weight: 800; color: #FFFFFF; margin-bottom: 6px; }}
+            .card-sub {{ font-size: 13px; font-weight: 600; margin-bottom: 18px; }}
+            .card-details {{ border-top: 1px solid var(--border-color); padding-top: 12px; display: flex;
+                justify-content: space-between; font-size: 12px; color: var(--text-muted); }}
+            .card-details b {{ color: var(--text-main); }}
+            .section-card {{ background-color: var(--bg-card); border: 1px solid var(--border-color);
+                border-radius: 12px; padding: 24px; margin-bottom: 25px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2); }}
+            .section-title {{ font-size: 18px; font-weight: 700; margin-top: 0; margin-bottom: 15px; color: var(--accent-blue); }}
+            .section-subtitle {{ font-size: 15px; font-weight: 600; margin-top: 0; margin-bottom: 15px; color: #FFFFFF; }}
+            .custom-table {{ width: 100%; border-collapse: collapse; text-align: right; font-size: 13px; }}
+            .custom-table th {{ background-color: #0F172A; color: var(--text-muted); font-weight: 600;
+                padding: 12px 16px; border-bottom: 2px solid var(--border-color); text-transform: uppercase;
+                font-size: 11px; letter-spacing: 0.5px; }}
+            .custom-table th:first-child {{ text-align: left; }}
+            .custom-table td {{ padding: 12px 16px; border-bottom: 1px solid var(--border-color); color: var(--text-main); }}
+            .custom-table tr:hover {{ background-color: rgba(255,255,255,0.03); }}
+            .row-label {{ text-align: left; font-weight: 600; color: #FFFFFF; }}
+            .footer {{ text-align: center; color: var(--text-muted); font-size: 12px; margin-top: 40px;
+                padding-top: 20px; border-top: 1px solid var(--border-color); }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <div>
+                    <h1>{company} <span class="ticker-badge">{ticker}</span></h1>
+                    <div style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">Relatório de Valuação REIT por AFFO/Ação Descontado</div>
+                </div>
+                <div class="price-tag">Preço Atual de Mercado: <b>${price:.2f}</b></div>
+            </div>
+            <div class="cards-grid">{cards_html}</div>
+            <h2 class="section-title">Projeções de AFFO/Ação por Cenário (5 Anos)</h2>
+            {projections_tables_html}
+            <h2 class="section-title">Contextualização Histórica</h2>
+            <div class="section-card">
+                <h3 class="section-subtitle">Waterfall FFO → AFFO ($M)</h3>
+                <table class="custom-table">
+                    <thead><tr><th>Componente</th>{''.join([f'<th>{y}</th>' for y in hist_abs_years])}</tr></thead>
+                    <tbody>{hist_abs_rows}</tbody>
+                </table>
+            </div>
+            <div class="section-card">
+                <h3 class="section-subtitle">AFFO por Ação e Crescimento Histórico</h3>
+                <table class="custom-table">
+                    <thead><tr><th>Métrica</th>{''.join([f'<th>{y}</th>' for y in hist_share_years])}</tr></thead>
+                    <tbody>{hist_share_rows}</tbody>
+                </table>
+            </div>
+            <div class="footer">Gerado por Modelo DCF para REITs (AFFO) • Dados via Yahoo Finance • Apresentação de Dados em $M / $ por Ação</div>
+        </div>
+    </body>
+    </html>
+    """
+    return html_template
 
-  <h2>1. AFFO/Ação — Histórico</h2>
-  <table><tr><th>Ano</th><th>AFFO/Ação (€)</th></tr>{df_to_html_rows(affo_df)}</table>
 
-  <h2>2. Crescimento Histórico</h2>
-  <table><tr><th>Período</th><th>Crescimento AFFO/Ação</th></tr>{df_to_html_rows(growth_hist_df)}</table>
+# ------------------------------------------------------------------------------
+# 4. MOTOR DE CÁLCULO DO DCF (AFFO/AÇÃO)
+# ------------------------------------------------------------------------------
+def run_reit_dcf_model(reit_data, growth_grid, ke_vals, tgr_vals):
+    results_summary = []
+    tables_dict = {}
+    last_affo = reit_data["last_affo_per_share"]
 
-  <h2>3. Premissas de Crescimento Projetado</h2>
-  <table><tr>{"".join(f"<th>{c}</th>" for c in growth_proj_df.columns)}</tr>{df_to_html_rows(growth_proj_df)}</table>
+    for scen in SCENARIOS:
+        growth = [growth_grid.loc[scen, YEAR_COLS[i]] / 100.0 for i in range(5)]
+        ke = ke_vals[scen] / 100.0
+        tgr = tgr_vals[scen] / 100.0
 
-  <h2>4. CAPM</h2>
-  <table>
-    <tr><th>Beta</th><td>{capm['beta']:.3f}</td></tr>
-    <tr><th>Taxa Sem Risco</th><td>{capm['rf']:.2f}%</td></tr>
-    <tr><th>Rm — CAGR histórico S&amp;P500 ({capm['lookback_years']} anos)</th><td>{capm['rm']:.2f}%</td></tr>
-    <tr><th>Prémio de Risco de Mercado (Rm − Rf)</th><td>{capm['erp']:.2f}%</td></tr>
-    <tr><th>Custo de Capital Próprio (Ke)</th><td>{capm['ke']:.2f}%</td></tr>
-  </table>
+        proj_affo = []
+        curr_affo = last_affo
+        for i in range(5):
+            curr_affo *= (1 + growth[i])
+            proj_affo.append(curr_affo)
 
-  <h2>5. Taxa de Crescimento Terminal (TGR)</h2>
-  <table>
-    <tr><th>Pessimista</th><td>{tgr_map['Pessimista']:.2f}%</td></tr>
-    <tr><th>Base</th><td>{tgr_map['Base']:.2f}%</td></tr>
-    <tr><th>Otimista</th><td>{tgr_map['Otimista']:.2f}%</td></tr>
-  </table>
+        discount_factors = [(1 + ke) ** (i + 1) for i in range(5)]
+        pv_affo = [proj_affo[i] / discount_factors[i] for i in range(5)]
+        sum_pv_affo = sum(pv_affo)
 
-  <h2>6. Resultado da Valorização</h2>
-  <table><tr><th>Cenário</th><th>Valor Justo/Ação</th><th>Upside vs. Preço Atual</th></tr>{results_rows}</table>
-  <p class="meta">Preço de mercado no momento do fetch: {"€%.2f" % current_price if current_price else "n/d"}</p>
+        terminal_value = (proj_affo[-1] * (1 + tgr)) / (ke - tgr) if ke > tgr else 0
+        pv_terminal_value = terminal_value / ((1 + ke) ** 5)
 
-  <div class="footer">
-    Relatório gerado pela ferramenta de DCF para REITs — Luminara Capital.<br>
-    AFFO calculado de forma aproximada a partir de dados públicos (Yahoo Finance).
-    Não constitui aconselhamento financeiro.
-  </div>
-</div>
-</body>
-</html>
-"""
-    return html
+        implied_price = sum_pv_affo + pv_terminal_value
+        upside = ((implied_price / reit_data["current_price"]) - 1) * 100 if reit_data["current_price"] > 0 else 0
 
+        results_summary.append({
+            "Cenário": scen,
+            "Ke": f"{ke * 100:.2f}%",
+            "TGR": f"{tgr * 100:.2f}%",
+            "PV AFFO Sum ($)": f"${sum_pv_affo:,.2f}",
+            "PV Terminal Value ($)": f"${pv_terminal_value:,.2f}",
+            "Implied Share Price ($)": f"${implied_price:.2f}",
+            "Upside / Downside (%)": f"{upside:+.2f}%",
+        })
 
-# ---------------------------------------------------------------------------
-# 0. Input do ticker + botão Pesquisar
-# ---------------------------------------------------------------------------
-col_ticker, col_btn = st.columns([3, 1])
-with col_ticker:
-    ticker_input = st.text_input("Ticker do REIT", value="O", label_visibility="visible").upper().strip()
-with col_btn:
-    st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
-    search_clicked = st.button("🔍 Pesquisar", type="primary", use_container_width=True)
-
-if search_clicked and ticker_input:
-    with st.spinner(f"A obter dados de {ticker_input}..."):
-        affo_df, fetch_msg = fetch_affo_inputs(ticker_input)
-        beta_val, rf_val, current_price, company_name = fetch_capm_inputs(ticker_input)
-
-    if affo_df is None:
-        st.warning(fetch_msg + " Podes preencher a tabela manualmente abaixo.")
-        affo_df = pd.DataFrame(
-            {
-                "Ano": list(range(pd.Timestamp.today().year - N_HIST_YEARS, pd.Timestamp.today().year)),
-                "AFFO/Ação (€)": [np.nan] * N_HIST_YEARS,
-            }
+        proj_df = pd.DataFrame(
+            {YEAR_COLS[i]: [proj_affo[i], pv_affo[i]] for i in range(5)},
+            index=["AFFO/Ação Projetado ($)", "PV do AFFO/Ação ($)"],
         )
-    elif fetch_msg:
-        st.info(fetch_msg)
+        tables_dict[scen] = proj_df
 
-    st.session_state["reit_ticker"] = ticker_input
-    st.session_state["company_name"] = company_name
-    st.session_state["affo_editor_data"] = affo_df
-    st.session_state["capm_defaults"] = {"beta": beta_val, "rf": rf_val * 100}
-    st.session_state["current_price"] = current_price
-    # Reset projeções e resultados ao pesquisar um novo ticker
-    st.session_state.pop("growth_editor_data", None)
-    st.session_state.pop("simulation_results", None)
+    return results_summary, tables_dict
 
-if "reit_ticker" not in st.session_state:
-    st.info("Insere um ticker e clica em **Pesquisar** para carregar os dados históricos.")
-    st.stop()
 
-st.caption(f"Dados carregados para **{st.session_state['reit_ticker']}** — {st.session_state.get('company_name', '')}")
-
-# ---------------------------------------------------------------------------
-# 1. AFFO histórico (editável)
-# ---------------------------------------------------------------------------
-st.markdown("### 1. AFFO por Ação — Histórico")
-st.caption(
-    "Cálculo aproximado (FFO = Resultado Líquido + D&A; AFFO = FFO − Capex). "
-    "Revê e corrige os valores se necessário."
-)
-
-affo_edited = st.data_editor(
-    st.session_state["affo_editor_data"],
-    key="affo_editor",
-    num_rows="fixed",
-    use_container_width=True,
-    column_config={
-        "Ano": st.column_config.NumberColumn("Ano", disabled=True, format="%d"),
-        "AFFO/Ação (€)": st.column_config.NumberColumn("AFFO/Ação (€)", format="%.4f"),
-    },
-)
-
-# ---------------------------------------------------------------------------
-# 2. Crescimento histórico (derivado, só leitura)
-# ---------------------------------------------------------------------------
-st.markdown("### 2. Taxa de Crescimento Histórica do AFFO/Ação")
-
-growth_rows = []
-for i in range(1, len(affo_edited)):
-    prev_val = affo_edited["AFFO/Ação (€)"].iloc[i - 1]
-    curr_val = affo_edited["AFFO/Ação (€)"].iloc[i]
-    if pd.isna(prev_val) or pd.isna(curr_val) or prev_val == 0:
-        growth_display = "n/d"
-    else:
-        growth_display = f"{(curr_val / prev_val - 1) * 100:.2f}%"
-    growth_rows.append(
-        {
-            "Período": f"{affo_edited['Ano'].iloc[i - 1]} → {affo_edited['Ano'].iloc[i]}",
-            "Crescimento AFFO/Ação": growth_display,
-        }
+# ------------------------------------------------------------------------------
+# 5. INTERFACE
+# ------------------------------------------------------------------------------
+def default_grid(default_val_pct):
+    return pd.DataFrame(
+        [[round(default_val_pct, 2)] * 5, [round(default_val_pct + 3, 2)] * 5, [round(default_val_pct - 3, 2)] * 5],
+        index=SCENARIOS,
+        columns=YEAR_COLS,
     )
 
-growth_hist_df = pd.DataFrame(growth_rows)
-st.dataframe(growth_hist_df, use_container_width=True, hide_index=True)
 
-valid_growths = [
-    (affo_edited["AFFO/Ação (€)"].iloc[i] / affo_edited["AFFO/Ação (€)"].iloc[i - 1] - 1) * 100
-    for i in range(1, len(affo_edited))
-    if not pd.isna(affo_edited["AFFO/Ação (€)"].iloc[i - 1])
-    and not pd.isna(affo_edited["AFFO/Ação (€)"].iloc[i])
-    and affo_edited["AFFO/Ação (€)"].iloc[i - 1] != 0
-]
-cagr_hist = float(np.mean(valid_growths)) if valid_growths else 2.0
+with st.sidebar:
+    st.header("⚙️ REIT")
+    ticker_input = st.text_input("Ticker", value="O", placeholder="Ex: O, VICI, SPG")
+    fetch_button = st.button("📥 Carregar Dados (AFFO)", type="primary", use_container_width=True)
 
-# ---------------------------------------------------------------------------
-# 3. Premissas de crescimento projetado (editável, 3x5)
-# ---------------------------------------------------------------------------
-st.markdown("### 3. Premissas de Crescimento do AFFO/Ação — Próximos 5 Anos")
-st.caption("Define a taxa de crescimento anual (%) para cada cenário.")
+if fetch_button:
+    with st.spinner(f"A obter dados financeiros para {ticker_input.upper()}..."):
+        try:
+            st.session_state["reit_dcf_data"] = extract_reit_financial_data(ticker_input)
+            for key in list(st.session_state.keys()):
+                if key.startswith("grid_") or key.startswith("ke_") or key.startswith("tgr_"):
+                    del st.session_state[key]
+        except Exception as e:
+            st.session_state.pop("reit_dcf_data", None)
+            st.error(f"Erro ao processar o ticker {ticker_input}: {e}")
 
-last_year = int(affo_edited["Ano"].iloc[-1]) if len(affo_edited) else pd.Timestamp.today().year
-proj_years = [last_year + i for i in range(1, N_PROJ_YEARS + 1)]
+reit_data = st.session_state.get("reit_dcf_data")
 
-if "growth_editor_data" not in st.session_state:
-    st.session_state["growth_editor_data"] = pd.DataFrame(
-        {
-            "Cenário": SCENARIOS,
-            **{f"Ano {y}": [round(cagr_hist, 2)] * 3 for y in proj_years},
-        }
-    )
-
-growth_proj_edited = st.data_editor(
-    st.session_state["growth_editor_data"],
-    key="growth_editor",
-    num_rows="fixed",
-    use_container_width=True,
-    column_config={
-        "Cenário": st.column_config.TextColumn("Cenário", disabled=True),
-        **{f"Ano {y}": st.column_config.NumberColumn(f"Ano {y} (%)", format="%.2f") for y in proj_years},
-    },
-)
-
-# ---------------------------------------------------------------------------
-# 4. CAPM
-# ---------------------------------------------------------------------------
-st.markdown("### 4. Custo de Capital Próprio (CAPM)")
-st.caption(
-    "O prémio de risco de mercado (ERP) é calculado dinamicamente a partir do "
-    "retorno histórico (CAGR) do S&P500, recalculado sempre que simulas."
-)
-
-capm_defaults = st.session_state["capm_defaults"]
-
-capm_col1, capm_col2, capm_col3 = st.columns(3)
-with capm_col1:
-    beta_input = st.number_input("Beta", value=round(capm_defaults["beta"], 3), step=0.05, key="beta_input")
-with capm_col2:
-    rf_input = st.number_input(
-        "Taxa Sem Risco (%) — 10Y Treasury", value=round(capm_defaults["rf"], 2), step=0.05, key="rf_input"
-    )
-with capm_col3:
-    lookback_years = st.selectbox(
-        "Período histórico do S&P500 (anos)",
-        options=[5, 10, 15, 20, 30],
-        index=1,
-        key="lookback_years",
-    )
-
-rm_val = fetch_market_return(lookback_years)
-if rm_val is None:
-    st.warning(
-        "Não foi possível obter dados históricos do S&P500. A usar prémio de "
-        "risco de mercado de referência (5,5%)."
-    )
-    rm_val = rf_input + 5.5
-    erp_input = 5.5
+if not reit_data:
+    st.info("👈 Introduz o ticker de um REIT na barra lateral e clica em **Carregar Dados** para começar.")
 else:
-    erp_input = rm_val - rf_input
+    st.subheader(f"{reit_data['company_name']} ({reit_data['ticker']}) — Preço Atual: ${reit_data['current_price']:.2f}")
 
-capm_col4, capm_col5, capm_col6 = st.columns(3)
-with capm_col4:
-    st.metric("Rm — CAGR histórico S&P500", f"{rm_val:.2f}%")
-with capm_col5:
-    st.metric("ERP (Rm − Rf)", f"{erp_input:.2f}%")
-with capm_col6:
-    ke = rf_input + beta_input * erp_input
-    st.metric("Ke", f"{ke:.2f}%")
+    missing = [k for k, v in reit_data["missing_components"].items() if v]
+    if missing:
+        st.warning(
+            "Componentes não encontrados na Yahoo Finance para este ticker (assumidos como 0 ou "
+            f"usando o CapEx total como proxy): {', '.join(missing)}. O AFFO calculado é uma "
+            "aproximação — a linha de ajuste 'straight-line rent' também não está disponível via yfinance."
+        )
+    if reit_data["capex_is_total_fallback"]:
+        st.caption(
+            "⚠️ Este ticker não reporta CapEx de manutenção separado do CapEx total na Yahoo Finance — "
+            "foi usado o CapEx total como proxy, o que pode subestimar o AFFO se incluir capex de crescimento."
+        )
 
-# ---------------------------------------------------------------------------
-# 5. TGR por cenário
-# ---------------------------------------------------------------------------
-st.markdown("### 5. Taxa de Crescimento Terminal (TGR) por Cenário")
+    with st.expander("Ver Fórmula Completa de FFO/AFFO e Histórico Detalhado"):
+        st.markdown("**Waterfall FFO → AFFO ($M)**")
+        st.dataframe(reit_data["breakdown_df"].style.format("${:,.2f}M"), use_container_width=True)
+        st.markdown("**AFFO por Ação e Crescimento Histórico**")
+        affo_share_display = reit_data["affo_share_df"].copy()
+        affo_share_display.loc["AFFO / Ação ($)"] = affo_share_display.loc["AFFO / Ação ($)"].map(lambda v: f"${v:.4f}")
+        affo_share_display.loc["Crescimento AFFO/Ação (%)"] = affo_share_display.loc["Crescimento AFFO/Ação (%)"].map(lambda v: f"{v:.2f}%")
+        affo_share_display.loc["Ações Diluídas (M)"] = affo_share_display.loc["Ações Diluídas (M)"].map(lambda v: f"{v:,.1f}M")
+        st.dataframe(affo_share_display, use_container_width=True)
 
-tgr_col1, tgr_col2, tgr_col3 = st.columns(3)
-with tgr_col1:
-    tgr_pessimista = st.number_input("TGR — Pessimista (%)", value=1.5, step=0.1, key="tgr_pess")
-with tgr_col2:
-    tgr_base = st.number_input("TGR — Base (%)", value=2.5, step=0.1, key="tgr_base")
-with tgr_col3:
-    tgr_otimista = st.number_input("TGR — Otimista (%)", value=3.5, step=0.1, key="tgr_otim")
-
-tgr_map = {"Pessimista": tgr_pessimista, "Base": tgr_base, "Otimista": tgr_otimista}
-
-# ---------------------------------------------------------------------------
-# 6. Botão Simular
-# ---------------------------------------------------------------------------
-st.markdown("---")
-simulate_clicked = st.button("🚀 Simular Valorização", type="primary", use_container_width=True)
-
-if simulate_clicked:
-    last_affo = affo_edited["AFFO/Ação (€)"].iloc[-1] if len(affo_edited) else None
-
-    if pd.isna(last_affo) or last_affo is None:
-        st.error("Preenche o AFFO/Ação do último ano histórico antes de simular.")
-    else:
-        discount_rate = ke / 100
-        results = []
-        for scenario in SCENARIOS:
-            row = growth_proj_edited[growth_proj_edited["Cenário"] == scenario].iloc[0]
-            tgr = tgr_map[scenario] / 100
-
-            if discount_rate <= tgr:
-                results.append({"Cenário": scenario, "Valor Justo/Ação (€)": None, "Erro": "Ke deve ser superior à TGR."})
-                continue
-
-            projected = []
-            current_affo = float(last_affo)
-            for y in proj_years:
-                g = float(row[f"Ano {y}"]) / 100
-                current_affo = current_affo * (1 + g)
-                projected.append(current_affo)
-
-            discounted = [cf / ((1 + discount_rate) ** (i + 1)) for i, cf in enumerate(projected)]
-            terminal_value = projected[-1] * (1 + tgr) / (discount_rate - tgr)
-            discounted_tv = terminal_value / ((1 + discount_rate) ** N_PROJ_YEARS)
-            fair_value = sum(discounted) + discounted_tv
-
-            results.append({"Cenário": scenario, "Valor Justo/Ação (€)": round(fair_value, 2), "Erro": None})
-
-        st.session_state["simulation_results"] = {
-            "results_df": pd.DataFrame(results),
-            "affo_df": affo_edited.copy(),
-            "growth_hist_df": growth_hist_df.copy(),
-            "growth_proj_df": growth_proj_edited.copy(),
-            "capm": {
-                "beta": beta_input,
-                "rf": rf_input,
-                "rm": rm_val,
-                "erp": erp_input,
-                "ke": ke,
-                "lookback_years": lookback_years,
-            },
-            "tgr_map": tgr_map,
-            "current_price": st.session_state.get("current_price"),
-        }
-
-# ---------------------------------------------------------------------------
-# 7. Resultados + download HTML
-# ---------------------------------------------------------------------------
-if "simulation_results" in st.session_state:
-    sim = st.session_state["simulation_results"]
-    results_df = sim["results_df"]
-    current_price = sim["current_price"]
-
-    st.markdown("### 6. Resultado da Valorização")
-
-    display_df = results_df[["Cenário", "Valor Justo/Ação (€)"]].copy()
-    display_df["Valor Justo/Ação (€)"] = display_df["Valor Justo/Ação (€)"].astype(object)
-    for i, r in results_df.iterrows():
-        if r["Erro"]:
-            display_df.at[i, "Valor Justo/Ação (€)"] = r["Erro"]
-
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
-
-    if current_price:
-        st.markdown("#### Comparação com Preço de Mercado")
-        price_cols = st.columns(3)
-        for idx, scenario in enumerate(SCENARIOS):
-            fair = results_df[results_df["Cenário"] == scenario]["Valor Justo/Ação (€)"].iloc[0]
-            with price_cols[idx]:
-                if fair is None:
-                    st.metric(scenario, "n/d")
-                else:
-                    upside = (fair / current_price - 1) * 100
-                    st.metric(scenario, f"€{fair:.2f}", delta=f"{upside:+.1f}% vs €{current_price:.2f} atual")
-    else:
-        st.caption("Preço de mercado atual não disponível para comparação.")
-
-    html_report = generate_html_report(
-        ticker=st.session_state["reit_ticker"],
-        company_name=st.session_state.get("company_name", ""),
-        affo_df=sim["affo_df"],
-        growth_hist_df=sim["growth_hist_df"],
-        growth_proj_df=sim["growth_proj_df"],
-        capm=sim["capm"],
-        tgr_map=sim["tgr_map"],
-        results_df=results_df,
-        current_price=current_price,
-    )
-
-    st.download_button(
-        label="⬇️ Download Relatório HTML",
-        data=html_report,
-        file_name=f"DCF_REIT_{st.session_state['reit_ticker']}_{datetime.now().strftime('%Y%m%d')}.html",
-        mime="text/html",
+    st.markdown("### 📊 Pressupostos de Crescimento do AFFO/Ação (editável por cenário e ano)")
+    grid_key = f"grid_AFFO_Growth_{reit_data['ticker']}"
+    base_growth_df = default_grid(reit_data["last_growth_pct"])
+    growth_grid = st.data_editor(
+        base_growth_df,
         use_container_width=True,
+        key=grid_key,
+        column_config={col: st.column_config.NumberColumn(f"{col} (%)", format="%.2f") for col in YEAR_COLS},
     )
+
+    st.markdown("### 💵 Custo de Capital Próprio (Ke — CAPM Calculado Dinamicamente)")
+    st.caption(
+        f"Rf (10Y Treasury): {reit_data['rf_rate']*100:.2f}% · "
+        f"Beta: {reit_data['beta']:.3f} · "
+        f"Rm (CAGR S&P500, 20 anos): {reit_data['sp500_return']*100:.2f}% · "
+        f"ERP dinâmico (Rm − Rf, mín. 3,5%): {reit_data['erp_dynamic']*100:.2f}%"
+    )
+    ke_base_pct = reit_data["ke_base"] * 100
+    col1, col2, col3 = st.columns(3)
+    ke_vals = {}
+    with col1:
+        ke_vals["Base"] = st.number_input("Ke Base (%)", value=round(ke_base_pct, 2), step=0.1, key=f"ke_base_{reit_data['ticker']}")
+    with col2:
+        ke_vals["Otimista"] = st.number_input("Ke Otimista (%)", value=round(ke_base_pct - 0.5, 2), step=0.1, key=f"ke_opt_{reit_data['ticker']}")
+    with col3:
+        ke_vals["Pessimista"] = st.number_input("Ke Pessimista (%)", value=round(ke_base_pct + 0.5, 2), step=0.1, key=f"ke_pess_{reit_data['ticker']}")
+
+    st.markdown("### 📈 Terminal Growth Rate (TGR)")
+    col4, col5, col6 = st.columns(3)
+    tgr_vals = {}
+    with col4:
+        tgr_vals["Base"] = st.number_input("TGR Base (%)", value=2.5, step=0.1, key=f"tgr_base_{reit_data['ticker']}")
+    with col5:
+        tgr_vals["Otimista"] = st.number_input("TGR Otimista (%)", value=3.0, step=0.1, key=f"tgr_opt_{reit_data['ticker']}")
+    with col6:
+        tgr_vals["Pessimista"] = st.number_input("TGR Pessimista (%)", value=2.0, step=0.1, key=f"tgr_pess_{reit_data['ticker']}")
+
+    calc_button = st.button("🧮 Gerar Análise & Relatório HTML", type="primary", use_container_width=True)
+
+    if calc_button:
+        results_summary, tables_dict = run_reit_dcf_model(reit_data, growth_grid, ke_vals, tgr_vals)
+        html_report = generate_styled_html_report_reit(reit_data, results_summary, tables_dict)
+
+        st.markdown(f"### ✅ Valuação Concluída para {reit_data['company_name']}")
+        st.dataframe(pd.DataFrame(results_summary), use_container_width=True, hide_index=True)
+
+        for scen in SCENARIOS:
+            with st.expander(f"Projeções de AFFO/Ação — Cenário {scen}"):
+                st.dataframe(tables_dict[scen].style.format("${:,.2f}"), use_container_width=True)
+
+        st.download_button(
+            label="⬇️ Descarregar Relatório HTML Estilizado",
+            data=html_report,
+            file_name=f"DCF_REIT_AFFO_{reit_data['ticker']}.html",
+            mime="text/html",
+            use_container_width=True,
+        )
