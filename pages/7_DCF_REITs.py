@@ -520,7 +520,7 @@ else:
         st.markdown("**Waterfall FFO → AFFO ($M)**")
         st.dataframe(reit_data["breakdown_df"].style.format("${:,.2f}M"), use_container_width=True)
         st.markdown("**AFFO por Ação e Crescimento Histórico**")
-        affo_share_display = reit_data["affo_share_df"].copy()
+        affo_share_display = reit_data["affo_share_df"].astype(object)
         affo_share_display.loc["AFFO / Ação ($)"] = affo_share_display.loc["AFFO / Ação ($)"].map(lambda v: f"${v:.4f}")
         affo_share_display.loc["Crescimento AFFO/Ação (%)"] = affo_share_display.loc["Crescimento AFFO/Ação (%)"].map(lambda v: f"{v:.2f}%")
         affo_share_display.loc["Ações Diluídas (M)"] = affo_share_display.loc["Ações Diluídas (M)"].map(lambda v: f"{v:,.1f}M")
