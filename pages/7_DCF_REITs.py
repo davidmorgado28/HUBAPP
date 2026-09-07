@@ -3,6 +3,11 @@
 # Segue o mesmo template do Modelo DCF (FCFF): sidebar de ticker, CAPM/ERP
 # dinâmico calculado a partir do S&P500, pressupostos editáveis por cenário
 # e relatório HTML estilizado (dark/cards) para download.
+#
+# Diferença principal face ao modelo FCFF: o motor de valorização desconta
+# AFFO por ação (fluxo de caixa já ao nível do acionista) em vez de FCFF ao
+# nível da empresa — por isso não há bridge Enterprise Value -> Equity Value
+# via caixa/dívida, e o custo de desconto é o Ke (CAPM), não o WACC.
 # ==============================================================================
 
 import sys
