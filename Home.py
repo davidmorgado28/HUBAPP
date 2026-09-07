@@ -261,6 +261,11 @@ st.markdown(
             <div class="app-desc">Análise financeira de REITs: FFO/AFFO, dividendos, alavancagem e comparação com concorrentes.</div>
              </div>
         <div class="app-card">
+            <div class="app-icon">🏗️</div>
+            <div class="app-name">Modelo DCF de REIT</div>
+            <div class="app-desc">Valuação por Discounted Cash Flow adaptada a REITs, com projeção de FFO/AFFO, taxa de capitalização terminal e 3 cenários.</div>
+        </div>
+        <div class="app-card">
             <div class="app-icon">🎲</div>
             <div class="app-name">Simulador de Monte Carlo</div>
             <div class="app-desc">Projeta milhares de cenários futuros do teu portefólio (com aportes mensais) e devolve retorno esperado, risco, probabilidade de perda e drawdown.</div>
