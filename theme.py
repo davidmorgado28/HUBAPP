@@ -1,7 +1,7 @@
 # ==============================================================================
 # 🌳 THEME.PY — Identidade visual partilhada "OAK & VALUE"
 # Importado por Home.py e por todas as páginas em /pages para garantir uma
-# aparência consistente (branco + verde carvalho + castanho claro) em toda a app.
+# aparência consistente (branco quente + verde carvalho) em toda a app.
 # ==============================================================================
 
 import streamlit as st
@@ -13,20 +13,21 @@ APP_NAME = "OAK Research App"     # nome da aplicação (usado em títulos/rodap
 PAGE_TITLE = "OAK & VALUE"        # nome da página (browser tab / cabeçalho)
 
 # ------------------------------------------------------------------------------
-# Paleta de cores — branco (base) > verde carvalho (principal) > castanho (mínimo)
+# Paleta de cores — branco quente (base) > verde carvalho (dominante, todos os tons)
+# Nota: o castanho foi removido; os destaques que antes usavam castanho passam
+# a usar tons de verde mais claros/médios (OAK_600 / OAK_400).
 # ------------------------------------------------------------------------------
-WHITE = "#FFFFFF"
-CREAM = "#FAF8F3"          # branco quente, para painéis/cartões
-MIST = "#F2F5F0"           # branco com traço de verde, para a sidebar
+WHITE = "#F1EEE4"          # branco quente e um pouco mais escuro (fundo principal)
+CREAM = "#E8E4D6"          # painéis/cartões, ligeiramente mais escuro que o fundo
+MIST = "#E1E7DC"           # branco com traço de verde, para a sidebar
 
 OAK_900 = "#1E2E22"        # verde carvalho profundo — texto de destaque, títulos
 OAK_700 = "#2F4A38"        # verde carvalho principal — botões, ícones, ênfase
-OAK_500 = "#4F7058"        # verde médio — texto secundário sobre fundo escuro
+OAK_600 = "#3E6249"        # verde médio-escuro — bordas de destaque, divisores
+OAK_500 = "#4F7058"        # verde médio — texto secundário
+OAK_400 = "#6B8F73"        # verde médio-claro — realces, badges
 OAK_300 = "#8FAB93"        # verde claro — bordas, linhas subtis
 OAK_100 = "#DCE6DE"        # verde muito claro — fundos subtis, hover
-
-TAN_600 = "#A97F52"        # castanho claro (carvalho/madeira) — detalhe mínimo
-TAN_300 = "#E8DCC8"        # castanho muito claro — bordas/realces discretos
 
 INK = "#1C2420"            # quase-preto esverdeado — texto de corpo
 
@@ -41,16 +42,16 @@ def inject_theme():
             @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Inter:wght@300;400;500;600&display=swap');
 
             :root {
-                --white: #FFFFFF;
-                --cream: #FAF8F3;
-                --mist: #F2F5F0;
+                --white: #F1EEE4;
+                --cream: #E8E4D6;
+                --mist: #E1E7DC;
                 --oak-900: #1E2E22;
                 --oak-700: #2F4A38;
+                --oak-600: #3E6249;
                 --oak-500: #4F7058;
+                --oak-400: #6B8F73;
                 --oak-300: #8FAB93;
                 --oak-100: #DCE6DE;
-                --tan-600: #A97F52;
-                --tan-300: #E8DCC8;
                 --ink: #1C2420;
             }
 
@@ -65,7 +66,7 @@ def inject_theme():
             /* Sidebar */
             section[data-testid="stSidebar"] {
                 background: linear-gradient(180deg, var(--mist) 0%, var(--white) 100%);
-                border-right: 1px solid rgba(47, 74, 56, 0.18);
+                border-right: 1px solid rgba(47, 74, 56, 0.2);
             }
             section[data-testid="stSidebar"] * { color: var(--ink) !important; }
             section[data-testid="stSidebar"] h1,
@@ -93,14 +94,14 @@ def inject_theme():
             .stButton button, .stDownloadButton button {
                 background: linear-gradient(135deg, var(--oak-900) 0%, var(--oak-700) 55%, var(--oak-500) 100%);
                 color: var(--white);
-                border: 1px solid var(--tan-600);
+                border: 1px solid var(--oak-600);
                 font-weight: 600;
                 letter-spacing: 0.02em;
                 transition: transform 0.15s ease, box-shadow 0.15s ease;
             }
             .stButton button:hover, .stDownloadButton button:hover {
                 transform: translateY(-1px);
-                box-shadow: 0 6px 16px rgba(47, 74, 56, 0.25);
+                box-shadow: 0 6px 16px rgba(47, 74, 56, 0.3);
                 color: var(--white);
             }
 
@@ -108,7 +109,7 @@ def inject_theme():
             div[data-testid="stMetric"] {
                 background: linear-gradient(155deg, var(--white) 0%, var(--cream) 100%);
                 border: 1px solid var(--oak-300);
-                border-left: 3px solid var(--tan-600);
+                border-left: 3px solid var(--oak-600);
                 border-radius: 12px;
                 padding: 0.9rem 1rem;
             }
@@ -131,7 +132,7 @@ def inject_theme():
 
             /* Tabs */
             button[data-baseweb="tab"] { color: var(--oak-500); }
-            button[data-baseweb="tab"][aria-selected="true"] { color: var(--oak-900); border-bottom-color: var(--tan-600); }
+            button[data-baseweb="tab"][aria-selected="true"] { color: var(--oak-900); border-bottom-color: var(--oak-600); }
 
             /* Alerts (info / success / warning / error) */
             div[data-testid="stAlert"] {
@@ -148,17 +149,17 @@ def inject_theme():
                 gap: 0.9rem;
                 padding: 0.4rem 0 1rem 0;
                 margin-bottom: 0.6rem;
-                border-bottom: 1px solid var(--tan-300);
+                border-bottom: 1px solid var(--oak-300);
             }
             .page-header-icon {
                 font-size: 2.1rem;
-                filter: drop-shadow(0 0 6px rgba(169, 127, 82, 0.35));
+                filter: drop-shadow(0 0 6px rgba(47, 74, 56, 0.35));
             }
             .page-header-title {
                 font-family: 'Playfair Display', serif;
                 font-weight: 700;
                 font-size: 1.9rem;
-                background: linear-gradient(90deg, var(--oak-900) 0%, var(--oak-700) 55%, var(--tan-600) 100%);
+                background: linear-gradient(90deg, var(--oak-900) 0%, var(--oak-700) 55%, var(--oak-400) 100%);
                 -webkit-background-clip: text;
                 -webkit-text-fill-color: transparent;
                 background-clip: text;
@@ -198,7 +199,7 @@ def page_header(icon: str, title: str, subtitle: str = ""):
 # ------------------------------------------------------------------------------
 # Plotly — layout claro consistente com a marca
 # ------------------------------------------------------------------------------
-PLOTLY_COLORWAY = [OAK_700, TAN_600, OAK_300, "#6E8C9C", OAK_900, "#C99A6C"]
+PLOTLY_COLORWAY = [OAK_700, OAK_400, OAK_300, "#6E8C9C", OAK_900, OAK_600]
 
 PLOTLY_LAYOUT = dict(
     template="plotly_white",
@@ -206,15 +207,15 @@ PLOTLY_LAYOUT = dict(
     plot_bgcolor=CREAM,
     font=dict(color=INK, family="Inter, sans-serif"),
     colorway=PLOTLY_COLORWAY,
-    xaxis=dict(gridcolor="rgba(47,74,56,0.12)", zerolinecolor="rgba(47,74,56,0.25)", linecolor="rgba(47,74,56,0.3)"),
-    yaxis=dict(gridcolor="rgba(47,74,56,0.12)", zerolinecolor="rgba(47,74,56,0.25)", linecolor="rgba(47,74,56,0.3)"),
-    legend=dict(bgcolor="rgba(255,255,255,0.85)", bordercolor="rgba(47,74,56,0.3)", borderwidth=1),
+    xaxis=dict(gridcolor="rgba(47,74,56,0.14)", zerolinecolor="rgba(47,74,56,0.28)", linecolor="rgba(47,74,56,0.32)"),
+    yaxis=dict(gridcolor="rgba(47,74,56,0.14)", zerolinecolor="rgba(47,74,56,0.28)", linecolor="rgba(47,74,56,0.32)"),
+    legend=dict(bgcolor="rgba(241,238,228,0.9)", bordercolor="rgba(47,74,56,0.3)", borderwidth=1),
     title=dict(font=dict(color=OAK_900)),
 )
 
 
 def style_plotly(fig):
-    """Aplica o tema OAK & VALUE (branco + verde carvalho + castanho) a uma figura Plotly, sem alterar os dados."""
+    """Aplica o tema OAK & VALUE (branco quente + verde carvalho) a uma figura Plotly, sem alterar os dados."""
     fig.update_layout(**PLOTLY_LAYOUT)
     return fig
 
