@@ -28,22 +28,22 @@ def get_logo_base64() -> str:
 logo_b64 = get_logo_base64()
 
 # ----------------------------------------------------------------------------
-# Estilo — paleta OAK & VALUE (branco + verde carvalho + castanho claro)
+# Estilo — paleta OAK & VALUE (branco quente + verde carvalho)
 # ----------------------------------------------------------------------------
 st.markdown(
     """
     <style>
         :root {
-            --white: #FFFFFF;
-            --cream: #FAF8F3;
-            --mist: #F2F5F0;
+            --white: #F1EEE4;
+            --cream: #E8E4D6;
+            --mist: #E1E7DC;
             --oak-900: #1E2E22;
             --oak-700: #2F4A38;
+            --oak-600: #3E6249;
             --oak-500: #4F7058;
+            --oak-400: #6B8F73;
             --oak-300: #8FAB93;
             --oak-100: #DCE6DE;
-            --tan-600: #A97F52;
-            --tan-300: #E8DCC8;
             --ink: #1C2420;
         }
 
@@ -59,7 +59,7 @@ st.markdown(
         .hero-logo {
             width: 150px;
             margin-bottom: 0.5rem;
-            filter: drop-shadow(0 0 18px rgba(169, 127, 82, 0.3));
+            filter: drop-shadow(0 0 18px rgba(47, 74, 56, 0.3));
         }
 
         .hero-title {
@@ -68,7 +68,7 @@ st.markdown(
             font-size: 3rem;
             letter-spacing: 0.12em;
             margin: 0.2rem 0 0 0;
-            background: linear-gradient(90deg, var(--oak-900) 0%, var(--oak-700) 55%, var(--tan-600) 100%);
+            background: linear-gradient(90deg, var(--oak-900) 0%, var(--oak-700) 55%, var(--oak-400) 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
@@ -89,7 +89,7 @@ st.markdown(
             width: 90px;
             height: 1px;
             margin: 1.1rem auto 1.3rem auto;
-            background: linear-gradient(90deg, transparent, var(--tan-600), transparent);
+            background: linear-gradient(90deg, transparent, var(--oak-600), transparent);
         }
 
         .hero-tagline {
@@ -116,7 +116,7 @@ st.markdown(
             content: "";
             width: 26px;
             height: 2px;
-            background: var(--tan-600);
+            background: var(--oak-600);
             display: inline-block;
         }
 
@@ -138,9 +138,9 @@ st.markdown(
             overflow: hidden;
         }
         .app-card:hover {
-            border-color: var(--tan-600);
+            border-color: var(--oak-600);
             transform: translateY(-3px);
-            box-shadow: 0 10px 24px rgba(30, 46, 34, 0.12), 0 0 14px rgba(169, 127, 82, 0.15);
+            box-shadow: 0 10px 24px rgba(30, 46, 34, 0.14), 0 0 14px rgba(47, 74, 56, 0.18);
         }
         .app-card .app-icon {
             font-size: 1.5rem;
@@ -166,7 +166,7 @@ st.markdown(
             font-size: 0.68rem;
             letter-spacing: 0.06em;
             color: var(--oak-900);
-            background: var(--tan-300);
+            background: var(--oak-100);
             padding: 0.15rem 0.55rem;
             border-radius: 20px;
             font-weight: 600;
@@ -190,13 +190,13 @@ st.markdown(
             text-align: center;
             margin-top: 3rem;
             padding-top: 1.2rem;
-            border-top: 1px solid var(--tan-300);
+            border-top: 1px solid var(--oak-100);
             color: rgba(28, 36, 32, 0.45);
             font-size: 0.78rem;
             letter-spacing: 0.08em;
         }
         .lux-footer span {
-            color: var(--tan-600);
+            color: var(--oak-600);
         }
     </style>
     """,
