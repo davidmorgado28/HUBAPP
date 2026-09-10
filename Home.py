@@ -3,11 +3,11 @@ from pathlib import Path
 
 import streamlit as st
 
-from theme import inject_theme
+from theme import inject_theme, APP_NAME, PAGE_TITLE
 
 st.set_page_config(
-    page_title="Luminara Capital | Hub de Aplicações",
-    page_icon="✨",
+    page_title=f"{APP_NAME} | Hub de Aplicações",
+    page_icon="🌳",
     layout="wide",
 )
 
@@ -28,21 +28,23 @@ def get_logo_base64() -> str:
 logo_b64 = get_logo_base64()
 
 # ----------------------------------------------------------------------------
-# Estilo — paleta Luminara Capital (azul-marinho profundo + dourado)
+# Estilo — paleta OAK & VALUE (branco + verde carvalho + castanho claro)
 # ----------------------------------------------------------------------------
 st.markdown(
     """
     <style>
         :root {
-            --navy-950: #05070f;
-            --navy-900: #0a0e27;
-            --navy-800: #0d1230;
-            --navy-700: #131a3d;
-            --gold-100: #f6e7c1;
-            --gold-300: #e8c874;
-            --gold-500: #d4af37;
-            --gold-700: #b8912e;
-            --ivory: #f5f5f0;
+            --white: #FFFFFF;
+            --cream: #FAF8F3;
+            --mist: #F2F5F0;
+            --oak-900: #1E2E22;
+            --oak-700: #2F4A38;
+            --oak-500: #4F7058;
+            --oak-300: #8FAB93;
+            --oak-100: #DCE6DE;
+            --tan-600: #A97F52;
+            --tan-300: #E8DCC8;
+            --ink: #1C2420;
         }
 
         /* ---------------- HERO ---------------- */
@@ -57,7 +59,7 @@ st.markdown(
         .hero-logo {
             width: 150px;
             margin-bottom: 0.5rem;
-            filter: drop-shadow(0 0 22px rgba(212, 175, 55, 0.35));
+            filter: drop-shadow(0 0 18px rgba(169, 127, 82, 0.3));
         }
 
         .hero-title {
@@ -66,7 +68,7 @@ st.markdown(
             font-size: 3rem;
             letter-spacing: 0.12em;
             margin: 0.2rem 0 0 0;
-            background: linear-gradient(90deg, var(--gold-700) 0%, var(--gold-100) 45%, var(--gold-500) 100%);
+            background: linear-gradient(90deg, var(--oak-900) 0%, var(--oak-700) 55%, var(--tan-600) 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
@@ -77,7 +79,7 @@ st.markdown(
             font-style: italic;
             font-weight: 500;
             font-size: 1.35rem;
-            color: var(--gold-300);
+            color: var(--oak-700);
             letter-spacing: 0.35em;
             margin-top: 0.3rem;
             text-transform: uppercase;
@@ -87,11 +89,11 @@ st.markdown(
             width: 90px;
             height: 1px;
             margin: 1.1rem auto 1.3rem auto;
-            background: linear-gradient(90deg, transparent, var(--gold-500), transparent);
+            background: linear-gradient(90deg, transparent, var(--tan-600), transparent);
         }
 
         .hero-tagline {
-            color: rgba(245, 245, 240, 0.72);
+            color: rgba(28, 36, 32, 0.72);
             font-size: 1.02rem;
             font-weight: 300;
             max-width: 620px;
@@ -101,7 +103,7 @@ st.markdown(
         /* ---------------- SECTION LABEL ---------------- */
         .section-label {
             font-family: 'Playfair Display', serif;
-            color: var(--ivory);
+            color: var(--oak-900);
             font-size: 1.3rem;
             font-weight: 600;
             letter-spacing: 0.04em;
@@ -114,7 +116,7 @@ st.markdown(
             content: "";
             width: 26px;
             height: 2px;
-            background: var(--gold-500);
+            background: var(--tan-600);
             display: inline-block;
         }
 
@@ -127,8 +129,8 @@ st.markdown(
         }
 
         .app-card {
-            background: linear-gradient(155deg, rgba(19, 26, 61, 0.85) 0%, rgba(10, 14, 39, 0.85) 100%);
-            border: 1px solid rgba(212, 175, 55, 0.22);
+            background: linear-gradient(155deg, var(--white) 0%, var(--cream) 100%);
+            border: 1px solid var(--oak-300);
             border-radius: 14px;
             padding: 1.3rem 1.4rem;
             transition: border-color 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;
@@ -136,9 +138,9 @@ st.markdown(
             overflow: hidden;
         }
         .app-card:hover {
-            border-color: rgba(212, 175, 55, 0.75);
+            border-color: var(--tan-600);
             transform: translateY(-3px);
-            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35), 0 0 18px rgba(212, 175, 55, 0.12);
+            box-shadow: 0 10px 24px rgba(30, 46, 34, 0.12), 0 0 14px rgba(169, 127, 82, 0.15);
         }
         .app-card .app-icon {
             font-size: 1.5rem;
@@ -147,13 +149,13 @@ st.markdown(
         }
         .app-card .app-name {
             font-family: 'Playfair Display', serif;
-            color: var(--gold-100);
+            color: var(--oak-900);
             font-size: 1.05rem;
             font-weight: 600;
             margin-bottom: 0.25rem;
         }
         .app-card .app-desc {
-            color: rgba(245, 245, 240, 0.6);
+            color: rgba(28, 36, 32, 0.62);
             font-size: 0.86rem;
             font-weight: 300;
             line-height: 1.4;
@@ -163,8 +165,8 @@ st.markdown(
             margin-top: 0.55rem;
             font-size: 0.68rem;
             letter-spacing: 0.06em;
-            color: var(--navy-950);
-            background: var(--gold-300);
+            color: var(--oak-900);
+            background: var(--tan-300);
             padding: 0.15rem 0.55rem;
             border-radius: 20px;
             font-weight: 600;
@@ -173,11 +175,11 @@ st.markdown(
 
         /* ---------------- CTA / INFO BOX ---------------- */
         .cta-box {
-            border: 1px solid rgba(212, 175, 55, 0.35);
-            background: rgba(212, 175, 55, 0.06);
+            border: 1px solid var(--oak-300);
+            background: var(--oak-100);
             border-radius: 12px;
             padding: 0.95rem 1.3rem;
-            color: var(--gold-100);
+            color: var(--oak-900);
             font-size: 0.92rem;
             text-align: center;
             margin-top: 0.5rem;
@@ -188,13 +190,13 @@ st.markdown(
             text-align: center;
             margin-top: 3rem;
             padding-top: 1.2rem;
-            border-top: 1px solid rgba(212, 175, 55, 0.18);
-            color: rgba(245, 245, 240, 0.4);
+            border-top: 1px solid var(--tan-300);
+            color: rgba(28, 36, 32, 0.45);
             font-size: 0.78rem;
             letter-spacing: 0.08em;
         }
         .lux-footer span {
-            color: var(--gold-500);
+            color: var(--tan-600);
         }
     </style>
     """,
@@ -214,8 +216,8 @@ st.markdown(
     f"""
     <div class="hero-wrap">
         {logo_html}
-        <div class="hero-title">LUMINARA CAPITAL</div>
-        <div class="hero-subtitle">Hub de Aplicações</div>
+        <div class="hero-title">OAK & VALUE</div>
+        <div class="hero-subtitle">{APP_NAME}</div>
         <div class="hero-divider"></div>
         <div class="hero-tagline">
             Um espaço centralizado de ferramentas de análise e simulação financeira. 
@@ -281,9 +283,9 @@ st.markdown(
 )
 
 st.markdown(
-    """
+    f"""
     <div class="lux-footer">
-        LUMINARA <span>CAPITAL</span> — Hub interno de aplicações
+        OAK <span>&amp; VALUE</span> — {APP_NAME} · Hub interno de aplicações
     </div>
     """,
     unsafe_allow_html=True,
