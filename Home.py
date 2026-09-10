@@ -44,6 +44,7 @@ st.markdown(
             --oak-400: #6B8F73;
             --oak-300: #8FAB93;
             --oak-100: #DCE6DE;
+            --oak-vivid: #2E7D4C;
             --ink: #1C2420;
         }
 
@@ -68,10 +69,7 @@ st.markdown(
             font-size: 3rem;
             letter-spacing: 0.12em;
             margin: 0.2rem 0 0 0;
-            background: linear-gradient(90deg, var(--oak-900) 0%, var(--oak-700) 55%, var(--oak-400) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: var(--oak-vivid);
         }
 
         .hero-subtitle {
