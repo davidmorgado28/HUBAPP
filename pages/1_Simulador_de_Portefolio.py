@@ -21,7 +21,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from theme import inject_theme, page_header, style_plotly
+from theme import inject_theme, page_header, style_plotly, APP_NAME
 
 st.set_page_config(
     page_title="Simulador de Portefólio vs Benchmark",
@@ -31,10 +31,10 @@ st.set_page_config(
 
 inject_theme()
 
-# Paleta consistente com a identidade Luminara Capital (dourado / navy)
-LUMINARA_PALETTE = [
-    "#d4af37", "#8fb3d9", "#7fd9a8", "#f6e7c1", "#b8912e",
-    "#4a5a8f", "#c9a876", "#5c6b8a", "#e8c874", "#6f8fae",
+# Paleta consistente com a identidade OAK & VALUE (branco quente + tons de verde carvalho)
+OAK_PALETTE = [
+    "#2E7D4C", "#1E2E22", "#4F7058", "#8FAB93", "#3E6249",
+    "#6B8F73", "#A8C4AE", "#57795F", "#7FA88A", "#243B2B",
 ]
 
 # ------------------------------------------------------------------------------
@@ -189,7 +189,7 @@ def make_pie_chart(series, title):
         labels=series.index,
         values=series.values,
         hole=0.45,
-        marker=dict(colors=LUMINARA_PALETTE, line=dict(color="#05070f", width=1.5)),
+        marker=dict(colors=OAK_PALETTE, line=dict(color="#F1EEE4", width=1.5)),
         textinfo="label+percent",
         hovertemplate="<b>%{label}</b><br>Peso: %{value:.1f}%<extra></extra>",
     )])
@@ -452,19 +452,19 @@ def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dc
     fig.add_trace(go.Scatter(
         x=df_results.index, y=df_results["Portfolio"],
         mode="lines", name="Portefólio (Com Dividendos)",
-        line=dict(color="#d4af37", width=2.5),
+        line=dict(color="#2E7D4C", width=2.5),
         hovertemplate="<b>Data:</b> %{x|%d/%m/%Y}<br><b>Portefólio:</b> %{y:,.2f} €<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
         x=df_results.index, y=df_results["Benchmark"],
         mode="lines", name=f"{benchmark_label} (Com Dividendos)",
-        line=dict(color="#8fb3d9", width=2),
+        line=dict(color="#8FAB93", width=2),
         hovertemplate=f"<b>Data:</b> %{{x|%d/%m/%Y}}<br><b>{benchmark_label}:</b> %{{y:,.2f}} €<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
         x=df_results.index, y=df_results["Invested"],
         mode="lines", name="Total Investido (Aportes + DCA)",
-        line=dict(color="#7fd9a8", width=1.8, dash="dash"),
+        line=dict(color="#3E6249", width=1.8, dash="dash"),
         hovertemplate="<b>Data:</b> %{x|%d/%m/%Y}<br><b>Investido:</b> %{y:,.2f} €<extra></extra>",
     ))
     fig.update_layout(
@@ -499,21 +499,21 @@ def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dc
         <title>Relatório de Desempenho, Risco e Diversificação</title>
         <style>
             @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600&display=swap');
-            body {{ font-family: 'Inter', Arial, sans-serif; margin: 30px; background-color: #05070f; color: #f5f5f0; }}
-            h1 {{ font-family: 'Playfair Display', serif; color: #f6e7c1; text-align: center; margin-bottom: 20px; letter-spacing: 0.03em; }}
-            h2 {{ color: #e8c874; }}
-            .container {{ max-width: 1200px; margin: 0 auto; background: #0d1230; padding: 25px; border-radius: 12px; border: 1px solid rgba(212,175,55,0.25); box-shadow: 0 8px 24px rgba(0,0,0,0.4); }}
-            .styled-table {{ border-collapse: collapse; margin: 25px 0; font-size: 0.95em; min-width: 100%; border-radius: 8px; overflow: hidden; box-shadow: 0 0 20px rgba(0,0,0,0.2); }}
-            .styled-table thead tr {{ background: linear-gradient(135deg, #b8912e, #d4af37); color: #05070f; text-align: left; font-weight: bold; }}
-            .styled-table th, .styled-table td {{ padding: 12px 15px; border-bottom: 1px solid rgba(212,175,55,0.15); color: #f5f5f0; }}
-            .styled-table tbody tr:nth-of-type(even) {{ background-color: rgba(212,175,55,0.05); }}
-            .styled-table tbody tr:last-of-type {{ border-bottom: 2px solid #d4af37; }}
-            .caption {{ color: #a9b3c9; font-size: 0.85em; margin-top: -10px; margin-bottom: 20px; }}
+            body {{ font-family: 'Inter', Arial, sans-serif; margin: 30px; background-color: #F1EEE4; color: #1C2420; }}
+            h1 {{ font-family: 'Playfair Display', serif; color: #2E7D4C; text-align: center; margin-bottom: 20px; letter-spacing: 0.03em; }}
+            h2 {{ color: #2F4A38; }}
+            .container {{ max-width: 1200px; margin: 0 auto; background: #E8E4D6; padding: 25px; border-radius: 12px; border: 1px solid rgba(47,74,56,0.22); box-shadow: 0 8px 24px rgba(30,46,34,0.12); }}
+            .styled-table {{ border-collapse: collapse; margin: 25px 0; font-size: 0.95em; min-width: 100%; border-radius: 8px; overflow: hidden; box-shadow: 0 0 16px rgba(30,46,34,0.08); }}
+            .styled-table thead tr {{ background: linear-gradient(135deg, #2F4A38, #4F7058); color: #F1EEE4; text-align: left; font-weight: bold; }}
+            .styled-table th, .styled-table td {{ padding: 12px 15px; border-bottom: 1px solid rgba(47,74,56,0.15); color: #1C2420; }}
+            .styled-table tbody tr:nth-of-type(even) {{ background-color: rgba(47,74,56,0.06); }}
+            .styled-table tbody tr:last-of-type {{ border-bottom: 2px solid #3E6249; }}
+            .caption {{ color: #4F7058; font-size: 0.85em; margin-top: -10px; margin-bottom: 20px; }}
         </style>
     </head>
     <body>
         <div class="container">
-            <h1>Luminara Capital — Relatório de Portefólio, Risco e Diversificação</h1>
+            <h1>{APP_NAME} — Relatório de Portefólio, Risco e Diversificação</h1>
             <h2>Métricas de Performance, Risco e Dividendos (vs {benchmark_label})</h2>
             {table_html}
             <h2>Gráfico Interativo de Desempenho</h2>
