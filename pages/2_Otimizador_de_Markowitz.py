@@ -22,7 +22,22 @@ import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from theme import inject_theme, page_header, apply_mpl_dark_style, GOLD_500, IVORY, NAVY_700
+from theme import (
+    inject_theme,
+    page_header,
+    apply_mpl_dark_style,
+    APP_NAME,
+    WHITE,
+    CREAM,
+    OAK_900,
+    OAK_700,
+    OAK_600,
+    OAK_500,
+    OAK_300,
+    INK,
+)
+
+OAK_VIVID = "#2E7D4C"  # verde carvalho vivo — mesma cor de destaque usada no título da app
 
 st.set_page_config(
     page_title="Otimizador de Markowitz",
@@ -223,19 +238,19 @@ def run_optimization(portfolio_config, periodo_analisado, min_weight_val, max_we
         opt_ret, opt_vol, _ = portfolio_performance(opt_weights)
 
         fig, ax = plt.subplots(figsize=(10, 6))
-        scatter = ax.scatter(results[0, :], results[1, :], c=results[2, :], cmap="YlOrBr", marker="o", s=10, alpha=0.35, label="Portefólios Simulados")
+        scatter = ax.scatter(results[0, :], results[1, :], c=results[2, :], cmap="Greens", marker="o", s=10, alpha=0.35, label="Portefólios Simulados")
         cbar = fig.colorbar(scatter, label="Sharpe Ratio")
-        cbar.ax.yaxis.label.set_color(IVORY)
-        cbar.ax.tick_params(colors=IVORY)
-        ax.scatter(init_vol, init_ret, color="#e8927c", marker="D", s=120, edgecolors=IVORY, linewidths=0.8, label="Portefólio Inicial")
-        ax.scatter(opt_vol, opt_ret, color=GOLD_500, marker="*", s=280, edgecolors=IVORY, linewidths=0.8, label="Portefólio Otimizado (Max Sharpe)")
-        ax.scatter(sp500_vol_annual, sp500_ret_annual, color="#8fb3d9", marker="^", s=150, edgecolors=IVORY, linewidths=0.8, label="S&P 500 Benchmark")
-        ax.set_title("Fronteira de Eficiência de Markowitz", fontsize=14, fontweight="bold", color="#f6e7c1")
+        cbar.ax.yaxis.label.set_color(INK)
+        cbar.ax.tick_params(colors=INK)
+        ax.scatter(init_vol, init_ret, color="#6E8C9C", marker="D", s=120, edgecolors=INK, linewidths=0.8, label="Portefólio Inicial")
+        ax.scatter(opt_vol, opt_ret, color=OAK_VIVID, marker="*", s=280, edgecolors=INK, linewidths=0.8, label="Portefólio Otimizado (Max Sharpe)")
+        ax.scatter(sp500_vol_annual, sp500_ret_annual, color="#8FAB93", marker="^", s=150, edgecolors=INK, linewidths=0.8, label="S&P 500 Benchmark")
+        ax.set_title("Fronteira de Eficiência de Markowitz", fontsize=14, fontweight="bold", color=OAK_900)
         ax.set_xlabel("Volatilidade Anualizada / Desvio Padrão (Risco)", fontsize=12)
         ax.set_ylabel("Retorno Anualizado Esperado", fontsize=12)
         legend = ax.legend(loc="upper left", frameon=True)
-        legend.get_frame().set_facecolor(NAVY_700)
-        legend.get_frame().set_edgecolor(GOLD_500)
+        legend.get_frame().set_facecolor(WHITE)
+        legend.get_frame().set_edgecolor(OAK_600)
         ax.grid(True, linestyle="--", alpha=0.35)
 
         img_buf = io.BytesIO()
@@ -260,20 +275,20 @@ def run_optimization(portfolio_config, periodo_analisado, min_weight_val, max_we
             <title>Relatório de Otimização de Portefólio</title>
             <style>
                 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600&display=swap');
-                body {{ font-family: 'Inter', 'Segoe UI', Arial, sans-serif; margin: 30px; background-color: #05070f; color: #f5f5f0; }}
-                h1, h2 {{ font-family: 'Playfair Display', serif; color: #f6e7c1; border-bottom: 2px solid rgba(212,175,55,0.35); padding-bottom: 8px; }}
-                .container {{ max-width: 1000px; margin: auto; background: #0d1230; padding: 25px; border-radius: 12px; border: 1px solid rgba(212,175,55,0.25); box-shadow: 0 8px 24px rgba(0,0,0,0.4); }}
+                body {{ font-family: 'Inter', 'Segoe UI', Arial, sans-serif; margin: 30px; background-color: #F1EEE4; color: #1C2420; }}
+                h1, h2 {{ font-family: 'Playfair Display', serif; color: #1E2E22; border-bottom: 2px solid rgba(47,74,56,0.3); padding-bottom: 8px; }}
+                .container {{ max-width: 1000px; margin: auto; background: #E8E4D6; padding: 25px; border-radius: 12px; border: 1px solid rgba(47,74,56,0.22); box-shadow: 0 8px 24px rgba(30,46,34,0.12); }}
                 table {{ width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 15px; }}
-                th, td {{ padding: 12px 15px; text-align: center; border: 1px solid rgba(212,175,55,0.15); color: #f5f5f0; }}
-                th {{ background: linear-gradient(135deg, #b8912e, #d4af37); color: #05070f; }}
-                tr:nth-child(even) {{ background-color: rgba(212,175,55,0.05); }}
+                th, td {{ padding: 12px 15px; text-align: center; border: 1px solid rgba(47,74,56,0.15); color: #1C2420; }}
+                th {{ background: linear-gradient(135deg, #2F4A38, #4F7058); color: #F1EEE4; }}
+                tr:nth-child(even) {{ background-color: rgba(47,74,56,0.06); }}
                 .img-container {{ text-align: center; margin: 30px 0; }}
-                .img-container img {{ max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }}
+                .img-container img {{ max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 4px rgba(30,46,34,0.15); }}
             </style>
         </head>
         <body>
             <div class="container">
-                <h1>Luminara Capital — Relatório de Otimização de Portefólio (Markowitz)</h1>
+                <h1>{APP_NAME} — Relatório de Otimização de Portefólio (Markowitz)</h1>
                 <p><b>Período Analisado:</b> {periodo_analisado} | <b>Limites de Peso:</b> {min_weight_val:.1%} a {max_weight_val:.1%} | <b>Taxa Livre de Risco (US 10Y):</b> {risk_free_rate:.2%}</p>
 
                 <h2>1. Distribuição de Pesos</h2>
