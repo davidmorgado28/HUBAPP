@@ -31,7 +31,7 @@ st.set_page_config(
 inject_theme()
 
 # ------------------------------------------------------------------------------
-# ESTILO CSS (idêntico ao original)
+# ESTILO CSS — paleta OAK & VALUE (branco quente + verde carvalho)
 # ------------------------------------------------------------------------------
 STYLE_CSS = """
 <style>
@@ -39,22 +39,22 @@ STYLE_CSS = """
 
     .report-container {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        background-color: #f8fafc;
-        color: #0f172a;
+        background-color: #F1EEE4;
+        color: #1C2420;
         padding: 30px;
         border-radius: 16px;
-        box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.01);
+        box-shadow: 0 10px 25px -5px rgba(30,46,34,0.08), 0 8px 10px -6px rgba(30,46,34,0.02);
         max-width: 1200px;
         margin: 0 auto;
     }
 
     .header-card {
-        background: linear-gradient(135deg, #05070f 0%, #131a3d 100%);
-        color: #ffffff;
+        background: linear-gradient(135deg, #1E2E22 0%, #2F4A38 100%);
+        color: #F1EEE4;
         padding: 28px 32px;
         border-radius: 14px;
         margin-bottom: 30px;
-        box-shadow: 0 10px 20px rgba(15, 23, 42, 0.15);
+        box-shadow: 0 10px 20px rgba(30, 46, 34, 0.18);
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -62,8 +62,8 @@ STYLE_CSS = """
         gap: 15px;
     }
 
-    .header-card h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; color: #ffffff; }
-    .header-card .subtitle { color: #94a3b8; font-size: 13px; margin-top: 6px; font-weight: 400; }
+    .header-card h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; color: #F1EEE4; }
+    .header-card .subtitle { color: #B7CCBB; font-size: 13px; margin-top: 6px; font-weight: 400; }
 
     .badge-sector {
         background: rgba(255, 255, 255, 0.1);
@@ -73,44 +73,44 @@ STYLE_CSS = """
         border-radius: 20px;
         font-size: 12px;
         font-weight: 500;
-        color: #e8c874;
+        color: #DCE6DE;
     }
 
     .section-title {
-        font-size: 16px; font-weight: 600; color: #1e293b; margin-top: 32px; margin-bottom: 14px;
+        font-size: 16px; font-weight: 600; color: #1E2E22; margin-top: 32px; margin-bottom: 14px;
         display: flex; align-items: center; gap: 8px; letter-spacing: -0.2px;
     }
-    .section-title::before { content: ''; display: inline-block; width: 4px; height: 18px; background: #d4af37; border-radius: 2px; }
+    .section-title::before { content: ''; display: inline-block; width: 4px; height: 18px; background: #2E7D4C; border-radius: 2px; }
 
     .table-wrapper {
-        background: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden;
-        margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+        background: #FFFFFF; border-radius: 12px; border: 1px solid rgba(47,74,56,0.15); overflow: hidden;
+        margin-bottom: 24px; box-shadow: 0 1px 3px rgba(30,46,34,0.04);
     }
 
     .finance-table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 0; }
     .finance-table th {
-        background-color: #f1f5f9; color: #475569; text-align: right; padding: 12px 16px;
+        background-color: #DCE6DE; color: #4F7058; text-align: right; padding: 12px 16px;
         font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;
-        border-bottom: 1px solid #e2e8f0;
+        border-bottom: 1px solid rgba(47,74,56,0.15);
     }
     .finance-table th:first-child { text-align: left; }
     .finance-table td {
-        border-bottom: 1px solid #f1f5f9; padding: 11px 16px; text-align: right; color: #334155;
+        border-bottom: 1px solid rgba(47,74,56,0.08); padding: 11px 16px; text-align: right; color: #1C2420;
         font-variant-numeric: tabular-nums;
     }
     .finance-table td:first-child {
-        font-weight: 600; text-align: left; color: #0f172a; background-color: #fafafa; width: 250px;
+        font-weight: 600; text-align: left; color: #1E2E22; background-color: #F2F5F0; width: 250px;
     }
     .finance-table tr:last-child td { border-bottom: none; }
-    .finance-table tr:hover td { background-color: #f8fafc; }
-    .finance-table tr:hover td:first-child { background-color: #f1f5f9; }
+    .finance-table tr:hover td { background-color: rgba(47,74,56,0.05); }
+    .finance-table tr:hover td:first-child { background-color: #DCE6DE; }
 
     .analysis-card {
-        background: #ffffff; border: 1px solid #e2e8f0; border-left: 5px solid #d4af37; border-radius: 12px;
-        padding: 24px; margin-top: 25px; font-size: 14px; line-height: 1.7; color: #334155;
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.03);
+        background: #FFFFFF; border: 1px solid rgba(47,74,56,0.15); border-left: 5px solid #2E7D4C; border-radius: 12px;
+        padding: 24px; margin-top: 25px; font-size: 14px; line-height: 1.7; color: #1C2420;
+        box-shadow: 0 4px 6px -1px rgba(30,46,34,0.05);
     }
-    .analysis-card h3 { margin-top: 0; color: #0f172a; font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+    .analysis-card h3 { margin-top: 0; color: #1E2E22; font-size: 16px; font-weight: 600; margin-bottom: 12px; }
     .analysis-card p { margin: 0 0 12px 0; }
     .analysis-card p:last-child { margin-bottom: 0; }
 
@@ -122,7 +122,7 @@ STYLE_CSS = """
     .badge-warning { background: #fef3c7; color: #92400e; }
     .badge-danger { background: #fee2e2; color: #991b1b; }
     .badge-info { background: #dbeafe; color: #1e40af; }
-    .badge-neutral { background: #f1f5f9; color: #475569; }
+    .badge-neutral { background: #DCE6DE; color: #4F7058; }
 </style>
 """
 
@@ -398,9 +398,9 @@ def format_df_to_html(df):
         for idx in df_formatted.index:
             val = df_formatted.loc[idx, col]
             if pd.isna(val) or val is None:
-                df_formatted.loc[idx, col] = "<span style='color:#94a3b8;'>—</span>"
+                df_formatted.loc[idx, col] = "<span style='color:#8FA096;'>—</span>"
             elif "Growth" in idx or "ROA" in idx or "ROE" in idx or "ROIC" in idx or "Margin" in idx or "Volatilidade" in idx or "Drawdown" in idx:
-                color = "#059669" if val > 0 else ("#dc2626" if val < 0 else "#334155")
+                color = "#059669" if val > 0 else ("#dc2626" if val < 0 else "#1C2420")
                 df_formatted.loc[idx, col] = f"<span style='color:{color}; font-weight:500;'>{val * 100:.2f}%</span>"
             else:
                 df_formatted.loc[idx, col] = f"{val:.2f}x" if "Ratio" not in idx and "Sharpe" not in idx and "Beta" not in idx else f"{val:.2f}"
@@ -487,7 +487,7 @@ if analyze_button:
                     </div>
                     <div>
                         <span class='badge-sector'>{sector}</span>
-                        <div style='color: #94a3b8; font-size: 11px; margin-top: 6px; text-align: right;'>{datetime.now().strftime('%d/%m/%Y')}</div>
+                        <div style='color: #B7CCBB; font-size: 11px; margin-top: 6px; text-align: right;'>{datetime.now().strftime('%d/%m/%Y')}</div>
                     </div>
                 </div>
 
@@ -516,7 +516,7 @@ if analyze_button:
             </div>
             """
 
-            full_html = f"<!DOCTYPE html><html><head><meta charset='utf-8'><title>Relatório {symbol}</title>{STYLE_CSS}</head><body style='background:#f1f5f9; padding:20px;'>{html_body}</body></html>"
+            full_html = f"<!DOCTYPE html><html><head><meta charset='utf-8'><title>Relatório {symbol}</title>{STYLE_CSS}</head><body style='background:#F1EEE4; padding:20px;'>{html_body}</body></html>"
 
             # Número de linhas de tabela aproximado, para dimensionar o iframe sem cortar conteúdo
             tables_for_sizing = [data['val'], data['growth'], data['profitability'], data['leverage'], data['liquidity'], data['market']]
