@@ -22,7 +22,7 @@ import streamlit as st
 import yfinance as yf
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from theme import inject_theme, page_header
+from theme import inject_theme, page_header, APP_NAME
 
 st.set_page_config(
     page_title="DCF para REITs",
@@ -262,7 +262,7 @@ def extract_reit_financial_data(ticker_symbol):
 
 
 # ------------------------------------------------------------------------------
-# 3. GERADOR DO DASHBOARD HTML ESTILIZADO (mesmo layout dark/cards do modelo FCFF)
+# 3. GERADOR DO DASHBOARD HTML ESTILIZADO — paleta OAK & VALUE
 # ------------------------------------------------------------------------------
 def generate_styled_html_report_reit(data, results_summary, tables_dict):
     ticker = data["ticker"]
@@ -343,45 +343,45 @@ def generate_styled_html_report_reit(data, results_summary, tables_dict):
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
         <style>
             :root {{
-                --bg-primary: #05070F; --bg-card: #0D1230; --text-main: #F5F5F0;
-                --text-muted: #A8A8B8; --accent-blue: #D4AF37; --accent-green: #10B981;
-                --accent-red: #EF4444; --border-color: #2A2F52;
+                --bg-primary: #F1EEE4; --bg-card: #E8E4D6; --text-main: #1C2420;
+                --text-muted: #4F7058; --accent-primary: #2E7D4C; --accent-green: #10B981;
+                --accent-red: #EF4444; --border-color: rgba(47,74,56,0.2);
             }}
             body {{ font-family: 'Inter', sans-serif; background-color: var(--bg-primary); color: var(--text-main);
                 margin: 0; padding: 40px 20px; display: flex; justify-content: center; }}
             .container {{ max-width: 1200px; width: 100%; }}
             .header {{ display: flex; justify-content: space-between; align-items: center;
                 border-bottom: 2px solid var(--border-color); padding-bottom: 20px; margin-bottom: 30px; }}
-            .header h1 {{ font-size: 28px; font-weight: 800; margin: 0; color: #FFFFFF; }}
-            .header .ticker-badge {{ background: rgba(212, 175, 55, 0.15); color: var(--accent-blue);
+            .header h1 {{ font-size: 28px; font-weight: 800; margin: 0; color: #1E2E22; }}
+            .header .ticker-badge {{ background: rgba(47, 74, 56, 0.12); color: var(--accent-primary);
                 padding: 4px 12px; border-radius: 6px; font-size: 14px; font-weight: 700; }}
             .header .price-tag {{ font-size: 16px; color: var(--text-muted); }}
-            .header .price-tag b {{ color: #FFFFFF; font-size: 20px; }}
+            .header .price-tag b {{ color: #1E2E22; font-size: 20px; }}
             .cards-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
                 gap: 20px; margin-bottom: 35px; }}
             .card {{ background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px;
-                padding: 24px; position: relative; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); }}
+                padding: 24px; position: relative; box-shadow: 0 10px 15px -3px rgba(30,46,34,0.12); }}
             .card-tag {{ position: absolute; top: 20px; right: 20px; font-size: 11px; font-weight: 800;
-                background: #334155; color: var(--accent-blue); padding: 2px 8px; border-radius: 4px; letter-spacing: 0.5px; }}
+                background: rgba(47, 74, 56, 0.12); color: var(--accent-primary); padding: 2px 8px; border-radius: 4px; letter-spacing: 0.5px; }}
             .card-title {{ font-size: 13px; color: var(--text-muted); text-transform: uppercase;
                 letter-spacing: 0.5px; margin-bottom: 8px; }}
-            .card-value {{ font-size: 34px; font-weight: 800; color: #FFFFFF; margin-bottom: 6px; }}
+            .card-value {{ font-size: 34px; font-weight: 800; color: #1E2E22; margin-bottom: 6px; }}
             .card-sub {{ font-size: 13px; font-weight: 600; margin-bottom: 18px; }}
             .card-details {{ border-top: 1px solid var(--border-color); padding-top: 12px; display: flex;
                 justify-content: space-between; font-size: 12px; color: var(--text-muted); }}
             .card-details b {{ color: var(--text-main); }}
             .section-card {{ background-color: var(--bg-card); border: 1px solid var(--border-color);
-                border-radius: 12px; padding: 24px; margin-bottom: 25px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2); }}
-            .section-title {{ font-size: 18px; font-weight: 700; margin-top: 0; margin-bottom: 15px; color: var(--accent-blue); }}
-            .section-subtitle {{ font-size: 15px; font-weight: 600; margin-top: 0; margin-bottom: 15px; color: #FFFFFF; }}
+                border-radius: 12px; padding: 24px; margin-bottom: 25px; box-shadow: 0 10px 15px -3px rgba(30,46,34,0.08); }}
+            .section-title {{ font-size: 18px; font-weight: 700; margin-top: 0; margin-bottom: 15px; color: var(--accent-primary); }}
+            .section-subtitle {{ font-size: 15px; font-weight: 600; margin-top: 0; margin-bottom: 15px; color: #1E2E22; }}
             .custom-table {{ width: 100%; border-collapse: collapse; text-align: right; font-size: 13px; }}
-            .custom-table th {{ background-color: #0F172A; color: var(--text-muted); font-weight: 600;
+            .custom-table th {{ background: linear-gradient(135deg, #2F4A38, #4F7058); color: #F1EEE4; font-weight: 600;
                 padding: 12px 16px; border-bottom: 2px solid var(--border-color); text-transform: uppercase;
                 font-size: 11px; letter-spacing: 0.5px; }}
             .custom-table th:first-child {{ text-align: left; }}
             .custom-table td {{ padding: 12px 16px; border-bottom: 1px solid var(--border-color); color: var(--text-main); }}
-            .custom-table tr:hover {{ background-color: rgba(255,255,255,0.03); }}
-            .row-label {{ text-align: left; font-weight: 600; color: #FFFFFF; }}
+            .custom-table tr:hover {{ background-color: rgba(47,74,56,0.05); }}
+            .row-label {{ text-align: left; font-weight: 600; color: #1E2E22; }}
             .footer {{ text-align: center; color: var(--text-muted); font-size: 12px; margin-top: 40px;
                 padding-top: 20px; border-top: 1px solid var(--border-color); }}
         </style>
@@ -413,7 +413,7 @@ def generate_styled_html_report_reit(data, results_summary, tables_dict):
                     <tbody>{hist_share_rows}</tbody>
                 </table>
             </div>
-            <div class="footer">Gerado por Modelo DCF para REITs (AFFO) • Dados via Yahoo Finance • Apresentação de Dados em $M / $ por Ação</div>
+            <div class="footer">Gerado por {APP_NAME} • Modelo DCF para REITs (AFFO) • Dados via Yahoo Finance • Apresentação de Dados em $M / $ por Ação</div>
         </div>
     </body>
     </html>
