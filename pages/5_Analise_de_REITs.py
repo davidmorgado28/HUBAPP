@@ -318,7 +318,7 @@ def gerar_apreciacao_peers(symbol, df_peers):
 
 
 # ------------------------------------------------------------------------------
-# 5. ESTILO CSS (idêntico ao original)
+# 5. ESTILO CSS — paleta OAK & VALUE (branco quente + verde carvalho)
 # ------------------------------------------------------------------------------
 CSS_STYLES = """
 <style>
@@ -326,42 +326,42 @@ CSS_STYLES = """
 
     .reit-report-body {
         font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-        background-color: #f8fafc; color: #0f172a; margin: 0; padding: 20px;
+        background-color: #F1EEE4; color: #1C2420; margin: 0; padding: 20px;
     }
     .report-card {
-        background: #ffffff; border-radius: 16px; box-shadow: 0 4px 20px -2px rgba(15,23,42,0.08);
-        border: 1px solid #e2e8f0; padding: 28px; margin-bottom: 24px;
+        background: #ffffff; border-radius: 16px; box-shadow: 0 4px 20px -2px rgba(30,46,34,0.1);
+        border: 1px solid rgba(47,74,56,0.15); padding: 28px; margin-bottom: 24px;
     }
     .hero-header {
-        background: linear-gradient(135deg, #05070f 0%, #131a3d 100%); border-radius: 16px; padding: 28px;
-        color: #ffffff; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center;
-        box-shadow: 0 10px 25px -5px rgba(15,23,42,0.25);
+        background: linear-gradient(135deg, #1E2E22 0%, #2F4A38 100%); border-radius: 16px; padding: 28px;
+        color: #F1EEE4; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center;
+        box-shadow: 0 10px 25px -5px rgba(30,46,34,0.25);
     }
     .hero-title { font-size: 26px; font-weight: 700; margin: 0 0 4px 0; letter-spacing: -0.02em; }
-    .hero-subtitle { color: #94a3b8; font-size: 13px; margin: 0; }
+    .hero-subtitle { color: #B7CCBB; font-size: 13px; margin: 0; }
     .kpi-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
-    .kpi-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
-    .kpi-label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: #64748b; letter-spacing: 0.05em; margin-bottom: 6px; }
-    .kpi-value { font-size: 22px; font-weight: 700; color: #0f172a; }
-    .section-title { font-size: 17px; font-weight: 700; color: #0f172a; margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px; }
-    .section-title::before { content: ''; display: inline-block; width: 4px; height: 18px; background: #d4af37; border-radius: 2px; }
+    .kpi-card { background: #ffffff; border: 1px solid rgba(47,74,56,0.15); border-radius: 12px; padding: 18px; box-shadow: 0 2px 8px rgba(30,46,34,0.04); }
+    .kpi-label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: #4F7058; letter-spacing: 0.05em; margin-bottom: 6px; }
+    .kpi-value { font-size: 22px; font-weight: 700; color: #1E2E22; }
+    .section-title { font-size: 17px; font-weight: 700; color: #1E2E22; margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px; }
+    .section-title::before { content: ''; display: inline-block; width: 4px; height: 18px; background: #2E7D4C; border-radius: 2px; }
     .custom-table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 12px; font-size: 13px; }
-    .custom-table th { background-color: #f1f5f9; color: #334155; font-weight: 600; padding: 10px 14px; text-align: center; border-bottom: 2px solid #e2e8f0; }
+    .custom-table th { background-color: #DCE6DE; color: #4F7058; font-weight: 600; padding: 10px 14px; text-align: center; border-bottom: 2px solid rgba(47,74,56,0.15); }
     .custom-table th:first-child { text-align: left; border-top-left-radius: 8px; }
     .custom-table th:last-child { border-top-right-radius: 8px; }
-    .custom-table tr.category-row th { background-color: #131a3d; color: #f6e7c1; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; padding: 8px 14px; }
-    .custom-table td { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; color: #334155; }
-    .custom-table tr:hover td { background-color: #f8fafc; }
+    .custom-table tr.category-row th { background-color: #1E2E22; color: #DCE6DE; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; padding: 8px 14px; }
+    .custom-table td { padding: 10px 14px; border-bottom: 1px solid rgba(47,74,56,0.08); color: #1C2420; }
+    .custom-table tr:hover td { background-color: rgba(47,74,56,0.05); }
     .badge { display: inline-block; padding: 4px 10px; border-radius: 9999px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
     .badge-success { background: #dcfce7; color: #166534; }
     .badge-warning { background: #fef3c7; color: #92400e; }
     .badge-danger { background: #fee2e2; color: #991b1b; }
     .badge-info { background: #dbeafe; color: #1e40af; }
-    .badge-neutral { background: #f1f5f9; color: #475569; }
+    .badge-neutral { background: #DCE6DE; color: #4F7058; }
     .insight-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 12px; }
-    .insight-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; }
-    .insight-header { font-size: 13px; font-weight: 700; color: #1e293b; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
-    .insight-card p { font-size: 12px; color: #475569; line-height: 1.5; margin: 0; }
+    .insight-card { background: #F2F5F0; border: 1px solid rgba(47,74,56,0.15); border-radius: 12px; padding: 16px; }
+    .insight-header { font-size: 13px; font-weight: 700; color: #1E2E22; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+    .insight-card p { font-size: 12px; color: #4F7058; line-height: 1.5; margin: 0; }
 </style>
 """
 
@@ -405,15 +405,15 @@ def formatar_tabela_historica_pretty(anos, dados):
             for v in valores:
                 if isinstance(v, float):
                     if any(kw in metrica for kw in ["Margin", "Yield", "Ratio", "Growth", "Drawdown", "Volatilidade"]):
-                        cols.append(f"<td style='text-align: center;'><b>{v * 100:.2f}%</b></td>" if pd.notna(v) else "<td style='text-align: center; color: #94a3b8;'>—</td>")
+                        cols.append(f"<td style='text-align: center;'><b>{v * 100:.2f}%</b></td>" if pd.notna(v) else "<td style='text-align: center; color: #8FA096;'>—</td>")
                     elif any(kw in metrica for kw in ["Price", "Coverage", "Beta", "Sharpe", "Debt"]):
                         if pd.notna(v):
                             suffix = "x" if ("Price" in metrica or "Debt" in metrica or "Coverage" in metrica) else ""
                             cols.append(f"<td style='text-align: center;'>{v:.2f}{suffix}</td>")
                         else:
-                            cols.append("<td style='text-align: center; color: #94a3b8;'>—</td>")
+                            cols.append("<td style='text-align: center; color: #8FA096;'>—</td>")
                     else:
-                        cols.append(f"<td style='text-align: center;'>{v:.2f}</td>" if pd.notna(v) else "<td style='text-align: center; color: #94a3b8;'>—</td>")
+                        cols.append(f"<td style='text-align: center;'>{v:.2f}</td>" if pd.notna(v) else "<td style='text-align: center; color: #8FA096;'>—</td>")
                 else:
                     cols.append(f"<td style='text-align: center;'>{v}</td>")
 
@@ -438,11 +438,11 @@ def formatar_tabela_peers_pretty(df_peers):
         cols = []
         for col, val in row.items():
             if col == "Ticker":
-                cols.append(f"<td style='font-weight: 700; text-align: center; color: #1e293b;'>{val}</td>")
+                cols.append(f"<td style='font-weight: 700; text-align: center; color: #1E2E22;'>{val}</td>")
             elif "%" in col or "Yield" in col or "Payout" in col or "Growth" in col:
-                cols.append(f"<td style='text-align: center;'>{val * 100:.2f}%</td>" if pd.notna(val) else "<td style='text-align: center; color: #94a3b8;'>—</td>")
+                cols.append(f"<td style='text-align: center;'>{val * 100:.2f}%</td>" if pd.notna(val) else "<td style='text-align: center; color: #8FA096;'>—</td>")
             else:
-                cols.append(f"<td style='text-align: center;'>{val:.2f}x</td>" if pd.notna(val) else "<td style='text-align: center; color: #94a3b8;'>—</td>")
+                cols.append(f"<td style='text-align: center;'>{val:.2f}x</td>" if pd.notna(val) else "<td style='text-align: center; color: #8FA096;'>—</td>")
         linhas.append(f"<tr>{''.join(cols)}</tr>")
 
     return f"""
@@ -505,7 +505,7 @@ if btn_executar:
                 <div class='hero-title'>{meta['name']} ({symbol})</div>
             </div>
             <div style='text-align: right;'>
-                <div style='font-size: 12px; color: #94a3b8;'>Cotação Atual</div>
+                <div style='font-size: 12px; color: #B7CCBB;'>Cotação Atual</div>
                 <div style='font-size: 24px; font-weight: 700;'>${meta['price']:.2f}</div>
             </div>
         </div>
