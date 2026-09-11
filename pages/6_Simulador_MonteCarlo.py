@@ -1,5 +1,5 @@
 """
-Luminara Capital — Simulador de Monte Carlo
+OAK & VALUE — Simulador de Monte Carlo
 --------------------------------------------
 Página adicional para o hub Streamlit. Permite ao utilizador definir uma
 carteira (tickers + pesos), um plano de investimento (montante inicial +
@@ -9,12 +9,6 @@ evolução do valor da carteira.
 
 Coloca este ficheiro na pasta `pages/` do teu projeto. Renomeia o prefixo
 numérico (6_) conforme a ordem que quiseres no menu lateral.
-
-NOTA sobre o theme.py: não tenho acesso ao teu módulo `theme.py` nesta
-conversa, por isso o import abaixo tem um fallback seguro. Se as tuas
-funções tiverem nomes diferentes (ex: `inject_css`, `render_header`),
-ajusta o bloco de import para bater certo com o teu módulo real — cola-mo
-aqui que eu alinho tudo.
 """
 
 import streamlit as st
@@ -24,15 +18,18 @@ import yfinance as yf
 import plotly.graph_objects as go
 
 # ----------------------------------------------------------------------
-# Tema partilhado (com fallback caso os nomes não coincidam exatamente)
+# Tema partilhado (com fallback caso o theme.py não esteja acessível)
 # ----------------------------------------------------------------------
 try:
     from theme import (
-        inject_theme, page_header, style_plotly,
-        NAVY_950, NAVY_900, NAVY_800, NAVY_700,
-        GOLD_100, GOLD_300, GOLD_500, GOLD_700, IVORY,
+        inject_theme, page_header, style_plotly, APP_NAME,
+        WHITE, CREAM, MIST,
+        OAK_900, OAK_700, OAK_600, OAK_500, OAK_400, OAK_300, OAK_100,
+        INK,
     )
 except ImportError:
+    APP_NAME = "OAK Research App"
+
     def inject_theme():
         pass
 
@@ -43,24 +40,25 @@ except ImportError:
 
     def style_plotly(fig):
         fig.update_layout(
-            template="plotly_dark",
+            template="plotly_white",
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(family="Inter, sans-serif", color="#f6e7c1"),
-            colorway=["#d4af37", "#f6e7c1", "#8c7024", "#e8d9a0"],
+            font=dict(family="Inter, sans-serif", color="#1C2420"),
+            colorway=["#2E7D4C", "#1E2E22", "#4F7058", "#8FAB93", "#3E6249", "#6B8F73"],
         )
         return fig
 
-    NAVY_950, NAVY_900, NAVY_800, NAVY_700 = "#05070f", "#0a0e27", "#0d1230", "#131a3d"
-    GOLD_100, GOLD_300, GOLD_500, GOLD_700 = "#f6e7c1", "#e8c874", "#d4af37", "#b8912e"
-    IVORY = "#f5f5f0"
+    WHITE, CREAM, MIST = "#F1EEE4", "#E8E4D6", "#E1E7DC"
+    OAK_900, OAK_700, OAK_600 = "#1E2E22", "#2F4A38", "#3E6249"
+    OAK_500, OAK_400, OAK_300, OAK_100 = "#4F7058", "#6B8F73", "#8FAB93", "#DCE6DE"
+    INK = "#1C2420"
 
-st.set_page_config(page_title="Simulador de Monte Carlo | Luminara Capital", page_icon="🎲", layout="wide")
+st.set_page_config(page_title=f"Simulador de Monte Carlo | {APP_NAME}", page_icon="🎲", layout="wide")
 inject_theme()
 page_header("🎲", "Simulador de Monte Carlo", "Projeção probabilística da evolução da tua carteira")
 
-GOLD = GOLD_500
-GOLD_LIGHT = GOLD_100
+ACCENT = "#2E7D4C"      # verde carvalho vivo — a cor de assinatura da marca
+ACCENT_DARK = OAK_600   # verde médio-escuro — segunda cor de destaque nos gráficos
 
 # ----------------------------------------------------------------------
 # Estado inicial
@@ -241,9 +239,9 @@ def fmt_eur(v: float) -> str:
 
 
 HOVERLABEL_STYLE = dict(
-    bgcolor=NAVY_700,
-    bordercolor=GOLD,
-    font=dict(color=GOLD_LIGHT, family="Inter, sans-serif", size=13),
+    bgcolor=WHITE,
+    bordercolor=ACCENT,
+    font=dict(color=INK, family="Inter, sans-serif", size=13),
 )
 
 
@@ -281,53 +279,52 @@ def build_html_report(res, metrics, params, figs) -> str:
 <html lang="pt">
 <head>
 <meta charset="UTF-8">
-<title>Relatório — Simulador de Monte Carlo | Luminara Capital</title>
+<title>Relatório — Simulador de Monte Carlo | {APP_NAME}</title>
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600&display=swap');
     body {{
         margin: 0; padding: 2.5rem 1.5rem;
-        background: radial-gradient(circle at 20% 0%, #0e1338 0%, {NAVY_900} 45%, {NAVY_950} 100%);
-        font-family: 'Inter', sans-serif; color: {IVORY};
+        background: linear-gradient(180deg, {WHITE} 0%, {CREAM} 100%);
+        font-family: 'Inter', sans-serif; color: {INK};
     }}
     .wrap {{ max-width: 1100px; margin: 0 auto; }}
     h1 {{
         font-family: 'Playfair Display', serif;
-        background: linear-gradient(90deg, {GOLD_700} 0%, {GOLD_100} 45%, {GOLD_500} 100%);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        color: {ACCENT};
         font-size: 2rem; margin-bottom: 0.1rem;
     }}
-    h2 {{ font-family: 'Playfair Display', serif; color: {GOLD_100}; border-bottom: 1px solid rgba(212,175,55,0.25); padding-bottom: 0.4rem; margin-top: 2.2rem; }}
-    .subtitle {{ color: rgba(245,245,240,0.65); margin-bottom: 1.8rem; }}
+    h2 {{ font-family: 'Playfair Display', serif; color: {OAK_900}; border-bottom: 1px solid rgba(47,74,56,0.25); padding-bottom: 0.4rem; margin-top: 2.2rem; }}
+    .subtitle {{ color: rgba(28,36,32,0.65); margin-bottom: 1.8rem; }}
     .params {{ display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem; }}
     .params span {{
-        background: rgba(212,175,55,0.08); border: 1px solid rgba(212,175,55,0.3);
-        border-radius: 8px; padding: 0.35rem 0.7rem; font-size: 0.88rem; color: {GOLD_100};
+        background: rgba(47,74,56,0.08); border: 1px solid rgba(47,74,56,0.3);
+        border-radius: 8px; padding: 0.35rem 0.7rem; font-size: 0.88rem; color: {OAK_700};
     }}
     table {{ border-collapse: collapse; width: 100%; max-width: 640px; margin-bottom: 1rem; }}
-    th, td {{ text-align: left; padding: 0.4rem 0.7rem; border-bottom: 1px solid rgba(212,175,55,0.18); font-size: 0.9rem; }}
-    th {{ color: {GOLD_300}; font-weight: 600; }}
+    th, td {{ text-align: left; padding: 0.4rem 0.7rem; border-bottom: 1px solid rgba(47,74,56,0.18); font-size: 0.9rem; }}
+    th {{ color: {OAK_600}; font-weight: 600; }}
     .metrics-grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.8rem; margin: 1rem 0 2rem 0; }}
     .metric {{
-        background: linear-gradient(155deg, rgba(19,26,61,0.85) 0%, rgba(10,14,39,0.85) 100%);
-        border: 1px solid rgba(212,175,55,0.22); border-radius: 12px; padding: 0.9rem 1rem;
+        background: linear-gradient(155deg, {WHITE} 0%, {CREAM} 100%);
+        border: 1px solid rgba(47,74,56,0.22); border-radius: 12px; padding: 0.9rem 1rem;
     }}
-    .metric-label {{ font-size: 0.78rem; color: rgba(245,245,240,0.6); margin-bottom: 0.3rem; }}
-    .metric-value {{ font-size: 1.25rem; color: {GOLD_100}; font-weight: 600; }}
+    .metric-label {{ font-size: 0.78rem; color: {OAK_500}; margin-bottom: 0.3rem; }}
+    .metric-value {{ font-size: 1.25rem; color: {OAK_900}; font-weight: 600; }}
     .chart-box {{
-        background: rgba(19,26,61,0.35); border: 1px solid rgba(212,175,55,0.18);
+        background: {MIST}; border: 1px solid rgba(47,74,56,0.18);
         border-radius: 12px; padding: 0.8rem; margin-bottom: 1.6rem;
     }}
-    .notes {{ font-size: 0.88rem; color: rgba(245,245,240,0.75); line-height: 1.6; }}
+    .notes {{ font-size: 0.88rem; color: rgba(28,36,32,0.75); line-height: 1.6; }}
     .notes li {{ margin-bottom: 0.35rem; }}
-    footer {{ margin-top: 2.5rem; font-size: 0.78rem; color: rgba(245,245,240,0.45); text-align: center; }}
+    footer {{ margin-top: 2.5rem; font-size: 0.78rem; color: rgba(28,36,32,0.45); text-align: center; }}
     @media (max-width: 700px) {{ .metrics-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
 </style>
 </head>
 <body>
 <div class="wrap">
     <h1>🎲 Relatório — Simulador de Monte Carlo</h1>
-    <div class="subtitle">Luminara Capital &middot; gerado em {timestamp}</div>
+    <div class="subtitle">{APP_NAME} &middot; gerado em {timestamp}</div>
 
     <div class="params">
         <span>Montante inicial: {fmt_eur(params['initial_investment'])}</span>
@@ -373,7 +370,7 @@ def build_html_report(res, metrics, params, figs) -> str:
         <li>Esta simulação é apenas educativa e não constitui aconselhamento de investimento. Rentabilidade passada não garante rentabilidade futura.</li>
     </ul>
 
-    <footer>Luminara Capital — Relatório gerado automaticamente pelo Simulador de Monte Carlo</footer>
+    <footer>{APP_NAME} — Relatório gerado automaticamente pelo Simulador de Monte Carlo</footer>
 </div>
 </body>
 </html>"""
@@ -510,27 +507,27 @@ if res is not None:
     ))
     fig_fan.add_trace(go.Scatter(
         x=x_years, y=perc_paths[3], name="P75",
-        line=dict(width=0), fill="tonexty", fillcolor="rgba(212,175,55,0.12)",
+        line=dict(width=0), fill="tonexty", fillcolor="rgba(46,125,76,0.12)",
         hovertemplate="P75: €%{y:,.0f}<extra></extra>",
     ))
     fig_fan.add_trace(go.Scatter(
         x=x_years, y=perc_paths[2], name="Mediana (P50)",
-        line=dict(color=GOLD, width=3), fill="tonexty", fillcolor="rgba(212,175,55,0.22)",
+        line=dict(color=ACCENT, width=3), fill="tonexty", fillcolor="rgba(46,125,76,0.22)",
         hovertemplate="Mediana: €%{y:,.0f}<extra></extra>",
     ))
     fig_fan.add_trace(go.Scatter(
         x=x_years, y=perc_paths[1], name="P25",
-        line=dict(width=0), fill="tonexty", fillcolor="rgba(212,175,55,0.22)",
+        line=dict(width=0), fill="tonexty", fillcolor="rgba(46,125,76,0.22)",
         hovertemplate="P25: €%{y:,.0f}<extra></extra>",
     ))
     fig_fan.add_trace(go.Scatter(
         x=x_years, y=perc_paths[0], name="P5 (pessimista)",
-        line=dict(width=0), fill="tonexty", fillcolor="rgba(212,175,55,0.12)",
+        line=dict(width=0), fill="tonexty", fillcolor="rgba(46,125,76,0.12)",
         hovertemplate="P5: €%{y:,.0f}<extra></extra>",
     ))
     fig_fan.add_trace(go.Scatter(
         x=x_years, y=total_invested_line, name="Capital investido (sem crescimento)",
-        line=dict(color="rgba(245,245,240,0.55)", width=2, dash="dash"),
+        line=dict(color="rgba(79,112,88,0.6)", width=2, dash="dash"),
         hovertemplate="Capital investido: €%{y:,.0f}<extra></extra>",
     ))
 
@@ -551,13 +548,13 @@ if res is not None:
     fig_hist = go.Figure()
     fig_hist.add_trace(go.Histogram(
         x=final_values, nbinsx=n_bins, histnorm="percent",
-        marker=dict(color=GOLD, line=dict(color=NAVY_800, width=0.5)),
+        marker=dict(color=ACCENT, line=dict(color=WHITE, width=0.5)),
         name="Valor Final",
         hovertemplate="≈ €%{x:,.0f}<br>%{y:.1f}% das simulações<extra></extra>",
     ))
-    fig_hist.add_vline(x=total_invested, line_dash="dash", line_color=GOLD_LIGHT,
+    fig_hist.add_vline(x=total_invested, line_dash="dash", line_color=OAK_700,
                         annotation_text="Capital investido", annotation_position="top right")
-    fig_hist.add_vline(x=median_value, line_dash="dot", line_color="white",
+    fig_hist.add_vline(x=median_value, line_dash="dot", line_color=OAK_900,
                         annotation_text="Mediana", annotation_position="top left")
     fig_hist.add_vline(x=p5, line_dash="dot", line_color="#E8927C",
                         annotation_text="P5", annotation_position="bottom left")
@@ -572,11 +569,11 @@ if res is not None:
     fig_dd = go.Figure()
     fig_dd.add_trace(go.Histogram(
         x=drawdowns * 100, nbinsx=n_bins, histnorm="percent",
-        marker=dict(color="#8c7024", line=dict(color=NAVY_800, width=0.5)),
+        marker=dict(color=ACCENT_DARK, line=dict(color=WHITE, width=0.5)),
         name="Máx. Drawdown",
         hovertemplate="≈ %{x:.1f}%<br>%{y:.1f}% das simulações<extra></extra>",
     ))
-    fig_dd.add_vline(x=avg_max_dd, line_dash="dash", line_color=GOLD_LIGHT,
+    fig_dd.add_vline(x=avg_max_dd, line_dash="dash", line_color=OAK_700,
                       annotation_text="Média", annotation_position="top right")
     fig_dd.add_vline(x=worst_max_dd, line_dash="dot", line_color="#E8927C",
                       annotation_text="Pior 5%", annotation_position="top left")
@@ -588,7 +585,7 @@ if res is not None:
     # ---- Alocação -----------------------------------------------------------
     fig_pie = go.Figure(data=[go.Pie(
         labels=res["valid_tickers"], values=res["valid_weights"],
-        hole=0.5, marker=dict(colors=["#d4af37", "#f6e7c1", "#8c7024", "#e8d9a0", "#b8974a", "#c9a961"]),
+        hole=0.5, marker=dict(colors=["#2E7D4C", "#1E2E22", "#4F7058", "#8FAB93", "#3E6249", "#6B8F73"]),
         hovertemplate="%{label}<br>%{percent}<extra></extra>",
     )])
     fig_pie.update_layout(hoverlabel=HOVERLABEL_STYLE, height=380, margin=dict(l=10, r=10, t=10, b=10))
@@ -626,7 +623,7 @@ if res is not None:
     st.download_button(
         "📥 Descarregar Relatório em HTML",
         data=html_report,
-        file_name="relatorio_monte_carlo_luminara.html",
+        file_name="relatorio_monte_carlo.html",
         mime="text/html",
         use_container_width=True,
     )
