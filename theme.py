@@ -111,7 +111,6 @@ def inject_theme():
                 color: var(--ink) !important;
                 border: 1px solid rgba(47, 74, 56, 0.35) !important;
             }
-            /* Alterado para var(--white) para meter os rótulos a branco */
             .stTextInput label, .stNumberInput label, .stDateInput label,
             .stSelectbox label, .stSlider label { color: var(--white) !important; }
 
@@ -231,10 +230,17 @@ def inject_theme():
                 fill: var(--white) !important;
             }
 
-            /* ---------------- ÍCONES DE AJUDA (tooltip "?") ---------------- */
+            /* ---------------- ÍCONES E CAIXAS DE AJUDA (Tooltips) ---------------- */
             [data-testid="stTooltipIcon"] svg,
             [data-testid="stTooltipHoverTarget"] svg {
                 fill: var(--oak-500) !important;
+            }
+            /* Garante que o texto dentro da caixa do tooltip fica branco */
+            div[role="tooltip"],
+            div[role="tooltip"] *,
+            div[data-baseweb="tooltip"],
+            div[data-baseweb="tooltip"] * {
+                color: #FFFFFF !important;
             }
 
             /* ---------------- TABS ---------------- */
