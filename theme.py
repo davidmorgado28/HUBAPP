@@ -267,10 +267,20 @@ PLOTLY_LAYOUT = dict(
     plot_bgcolor=CREAM,
     font=dict(color=INK, family="Inter, sans-serif"),
     colorway=PLOTLY_COLORWAY,
-    xaxis=dict(gridcolor="rgba(47,74,56,0.14)", zerolinecolor="rgba(47,74,56,0.28)", linecolor="rgba(47,74,56,0.32)"),
-    yaxis=dict(gridcolor="rgba(47,74,56,0.14)", zerolinecolor="rgba(47,74,56,0.28)", linecolor="rgba(47,74,56,0.32)"),
-    legend=dict(bgcolor="rgba(241,238,228,0.9)", bordercolor="rgba(47,74,56,0.3)", borderwidth=1),
+    xaxis=dict(
+        gridcolor="rgba(47,74,56,0.14)", zerolinecolor="rgba(47,74,56,0.28)", linecolor="rgba(47,74,56,0.32)",
+        title=dict(font=dict(color=OAK_900)), tickfont=dict(color=INK),
+    ),
+    yaxis=dict(
+        gridcolor="rgba(47,74,56,0.14)", zerolinecolor="rgba(47,74,56,0.28)", linecolor="rgba(47,74,56,0.32)",
+        title=dict(font=dict(color=OAK_900)), tickfont=dict(color=INK),
+    ),
+    legend=dict(
+        bgcolor="rgba(241,238,228,0.9)", bordercolor="rgba(47,74,56,0.3)", borderwidth=1,
+        font=dict(color=INK, family="Inter, sans-serif"),
+    ),
     title=dict(font=dict(color=OAK_900)),
+    hoverlabel=dict(bgcolor=WHITE, bordercolor=OAK_700, font=dict(color=INK, family="Inter, sans-serif")),
 )
 
 
