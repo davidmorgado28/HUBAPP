@@ -649,6 +649,35 @@ if res is not None:
     st.markdown("#### Alocação da Carteira Simulada")
     st.plotly_chart(fig_pie, use_container_width=True)
 
+    # CSS aplicado só a esta página: dá a este expander em concreto (o último
+    # da página) um fundo verde carvalho escuro, para o texto branco pedido
+    # ficar legível — não mexe nos restantes expanders da app.
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stExpander"]:last-of-type {
+            background: linear-gradient(135deg, #1E2E22 0%, #2F4A38 100%) !important;
+            border: 1px solid rgba(47,74,56,0.35) !important;
+        }
+        div[data-testid="stExpander"]:last-of-type summary,
+        div[data-testid="stExpander"]:last-of-type summary p,
+        div[data-testid="stExpander"]:last-of-type summary span {
+            color: #F1EEE4 !important;
+        }
+        div[data-testid="stExpander"]:last-of-type summary svg {
+            fill: #F1EEE4 !important;
+        }
+        div[data-testid="stExpander"]:last-of-type p,
+        div[data-testid="stExpander"]:last-of-type li,
+        div[data-testid="stExpander"]:last-of-type span,
+        div[data-testid="stExpander"]:last-of-type strong {
+            color: #F1EEE4 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     with st.expander("ℹ️ Notas metodológicas"):
         st.markdown(f"""
         - Retornos mensais históricos (últimos ~10 anos, ou período disponível) foram combinados
