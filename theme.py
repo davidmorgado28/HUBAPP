@@ -189,6 +189,68 @@ def inject_theme():
                 border: 1px solid var(--oak-300);
                 border-radius: 10px;
             }
+            /* Cabeçalho do expander (seta + texto) — o Streamlit assume por vezes
+               um tema base escuro nestes componentes nativos e pinta-os a branco;
+               força-se aqui a cor certa para o novo fundo claro. */
+            div[data-testid="stExpander"] summary,
+            div[data-testid="stExpander"] summary p,
+            div[data-testid="stExpander"] summary span {
+                color: var(--oak-700) !important;
+            }
+            div[data-testid="stExpander"] summary svg {
+                fill: var(--oak-700) !important;
+            }
+
+            /* ---------------- RADIO / CHECKBOX / TOGGLE ---------------- */
+            div[data-testid="stRadio"] label p,
+            div[data-testid="stRadio"] label span,
+            div[data-testid="stCheckbox"] label p,
+            div[data-testid="stCheckbox"] label span,
+            div[data-testid="stToggle"] label p,
+            div[data-testid="stToggle"] label span {
+                color: var(--ink) !important;
+            }
+            /* Contorno do círculo/caixa não selecionada do radio e checkbox */
+            div[data-testid="stRadio"] label div:first-child,
+            div[data-testid="stCheckbox"] label span:first-child {
+                border-color: var(--oak-600) !important;
+            }
+            /* Texto dentro do "pill" selecionado do radio horizontal, quando o
+               fundo fica colorido (verde) — garante contraste em ambos os casos */
+            div[data-testid="stRadio"] label[data-checked="true"] p,
+            div[data-testid="stRadio"] label[aria-checked="true"] p {
+                color: var(--white) !important;
+            }
+
+            /* ---------------- SLIDER ---------------- */
+            div[data-testid="stSlider"] div[data-testid="stTickBarMin"],
+            div[data-testid="stSlider"] div[data-testid="stTickBarMax"],
+            div[data-testid="stSlider"] label {
+                color: var(--ink) !important;
+            }
+            div[data-testid="stSlider"] div[role="slider"] {
+                background-color: var(--oak-700) !important;
+            }
+
+            /* ---------------- SELECTBOX / MULTISELECT ---------------- */
+            div[data-baseweb="select"] svg {
+                fill: var(--oak-700) !important;
+            }
+            /* Tags de itens selecionados no multiselect */
+            div[data-baseweb="tag"] {
+                background-color: var(--oak-700) !important;
+            }
+            div[data-baseweb="tag"] span,
+            div[data-baseweb="tag"] svg {
+                color: var(--white) !important;
+                fill: var(--white) !important;
+            }
+
+            /* ---------------- ÍCONES DE AJUDA (tooltip "?") ---------------- */
+            [data-testid="stTooltipIcon"] svg,
+            [data-testid="stTooltipHoverTarget"] svg {
+                fill: var(--oak-500) !important;
+            }
 
             /* ---------------- TABS ---------------- */
             button[data-baseweb="tab"] { color: var(--oak-500); }
