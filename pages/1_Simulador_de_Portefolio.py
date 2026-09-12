@@ -505,8 +505,8 @@ def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dc
             .container {{ max-width: 1200px; margin: 0 auto; background: #E8E4D6; padding: 25px; border-radius: 12px; border: 1px solid rgba(47,74,56,0.22); box-shadow: 0 8px 24px rgba(30,46,34,0.12); }}
             .styled-table {{ border-collapse: collapse; margin: 25px 0; font-size: 0.95em; min-width: 100%; border-radius: 8px; overflow: hidden; box-shadow: 0 0 16px rgba(30,46,34,0.08); }}
             .styled-table thead tr {{ background: linear-gradient(135deg, #2F4A38, #4F7058); text-align: left; font-weight: bold; }}
-            .styled-table th {{ padding: 12px 15px; border-bottom: 1px solid rgba(47,74,56,0.15); color: #F1EEE4; }}
-            .styled-table td {{ padding: 12px 15px; border-bottom: 1px solid rgba(47,74,56,0.15); color: #1C2420; }}
+            .styled-table thead th {{ padding: 12px 15px; border-bottom: 1px solid rgba(47,74,56,0.15); color: #F1EEE4; }}
+            .styled-table tbody th, .styled-table td {{ padding: 12px 15px; border-bottom: 1px solid rgba(47,74,56,0.15); color: #1C2420; }}
             .styled-table tbody tr:nth-of-type(even) {{ background-color: rgba(47,74,56,0.06); }}
             .styled-table tbody tr:last-of-type {{ border-bottom: 2px solid #3E6249; }}
             .caption {{ color: #4F7058; font-size: 0.85em; margin-top: -10px; margin-bottom: 20px; }}
