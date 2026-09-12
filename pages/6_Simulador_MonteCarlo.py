@@ -655,22 +655,22 @@ if res is not None:
     st.markdown(
         """
         <style>
-        div[data-testid="stExpander"]:last-of-type {
+        div[data-testid="stExpander"] {
             background: linear-gradient(135deg, #1E2E22 0%, #2F4A38 100%) !important;
             border: 1px solid rgba(47,74,56,0.35) !important;
         }
-        div[data-testid="stExpander"]:last-of-type summary,
-        div[data-testid="stExpander"]:last-of-type summary p,
-        div[data-testid="stExpander"]:last-of-type summary span {
+        div[data-testid="stExpander"] summary,
+        div[data-testid="stExpander"] summary p,
+        div[data-testid="stExpander"] summary span {
             color: #F1EEE4 !important;
         }
-        div[data-testid="stExpander"]:last-of-type summary svg {
+        div[data-testid="stExpander"] summary svg {
             fill: #F1EEE4 !important;
         }
-        div[data-testid="stExpander"]:last-of-type p,
-        div[data-testid="stExpander"]:last-of-type li,
-        div[data-testid="stExpander"]:last-of-type span,
-        div[data-testid="stExpander"]:last-of-type strong {
+        div[data-testid="stExpander"] p,
+        div[data-testid="stExpander"] li,
+        div[data-testid="stExpander"] span,
+        div[data-testid="stExpander"] strong {
             color: #F1EEE4 !important;
         }
         </style>
@@ -679,16 +679,21 @@ if res is not None:
     )
 
     with st.expander("ℹ️ Notas metodológicas"):
-        st.markdown(f"""
-        - Retornos mensais históricos (últimos ~10 anos, ou período disponível) foram combinados
-          pelos pesos da carteira para formar uma série de retornos mensais da carteira.
-        - Método de amostragem: **{method}**.
-        - Cada simulação aplica um retorno mensal amostrado, seguido do aporte mensal, ao longo de
-          **{n_months} meses** ({res['horizon_years']} anos).
-        - Máximo drawdown é calculado por trajetória (pico a vale do valor acumulado), depois
-          agregado por média e percentil 5% (pior caso).
-        - Esta simulação é apenas educativa e não constitui aconselhamento de investimento.
-          Rentabilidade passada não garante rentabilidade futura.
-        """)
+        st.markdown(
+            f"""
+            <ul style="margin:0; padding-left:1.2rem; color:#F1EEE4;">
+                <li style="color:#F1EEE4; margin-bottom:0.5rem;">Retornos mensais históricos (últimos ~10 anos, ou período disponível) foram combinados
+                pelos pesos da carteira para formar uma série de retornos mensais da carteira.</li>
+                <li style="color:#F1EEE4; margin-bottom:0.5rem;">Método de amostragem: <strong style="color:#F1EEE4;">{method}</strong>.</li>
+                <li style="color:#F1EEE4; margin-bottom:0.5rem;">Cada simulação aplica um retorno mensal amostrado, seguido do aporte mensal, ao longo de
+                <strong style="color:#F1EEE4;">{n_months} meses</strong> ({res['horizon_years']} anos).</li>
+                <li style="color:#F1EEE4; margin-bottom:0.5rem;">Máximo drawdown é calculado por trajetória (pico a vale do valor acumulado), depois
+                agregado por média e percentil 5% (pior caso).</li>
+                <li style="color:#F1EEE4; margin-bottom:0;">Esta simulação é apenas educativa e não constitui aconselhamento de investimento.
+                Rentabilidade passada não garante rentabilidade futura.</li>
+            </ul>
+            """,
+            unsafe_allow_html=True,
+        )
 else:
     st.info("Preenche a carteira e os parâmetros acima e clica em **Executar Simulação** para gerar o relatório.")
