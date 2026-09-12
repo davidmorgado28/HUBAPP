@@ -14,8 +14,6 @@ PAGE_TITLE = "OAK & VALUE"        # nome da página (browser tab / cabeçalho)
 
 # ------------------------------------------------------------------------------
 # Paleta de cores — branco quente (base) > verde carvalho (dominante, todos os tons)
-# Nota: o castanho foi removido; os destaques que antes usavam castanho passam
-# a usar tons de verde mais claros/médios (OAK_600 / OAK_400).
 # ------------------------------------------------------------------------------
 WHITE = "#F1EEE4"          # branco quente e um pouco mais escuro (fundo principal)
 CREAM = "#E8E4D6"          # painéis/cartões, ligeiramente mais escuro que o fundo
@@ -63,24 +61,40 @@ def inject_theme():
             html, body, [class*="css"] { font-family: 'Inter', sans-serif; color: var(--ink); }
             .block-container { padding-top: 2rem; max-width: 1200px; }
 
-            /* Sidebar */
+            /* ---------------- SIDEBAR ---------------- */
             section[data-testid="stSidebar"] {
                 background: linear-gradient(180deg, var(--mist) 0%, var(--white) 100%);
                 border-right: 1px solid rgba(47, 74, 56, 0.2);
             }
-            section[data-testid="stSidebar"] * { color: var(--ink) !important; }
+            /* Texto normal da sidebar (labels, parágrafos, legendas, markdown) — NÃO usar
+               seletor universal aqui: isso também apanharia o texto dos botões e forçaria
+               texto escuro sobre botões de fundo verde escuro, tornando-os ilegíveis. */
+            section[data-testid="stSidebar"] label,
+            section[data-testid="stSidebar"] p,
+            section[data-testid="stSidebar"] span,
+            section[data-testid="stSidebar"] .stMarkdown,
+            section[data-testid="stSidebar"] .stCaptionContainer,
+            section[data-testid="stSidebar"] div[data-testid="stCaptionContainer"],
+            section[data-testid="stSidebar"] div[data-testid="stWidgetLabel"] {
+                color: var(--ink) !important;
+            }
             section[data-testid="stSidebar"] h1,
             section[data-testid="stSidebar"] h2,
             section[data-testid="stSidebar"] h3 {
                 font-family: 'Playfair Display', serif;
                 color: var(--oak-700) !important;
             }
+            /* Botões dentro da sidebar mantêm texto branco sobre o fundo verde escuro */
+            section[data-testid="stSidebar"] .stButton button,
+            section[data-testid="stSidebar"] .stDownloadButton button {
+                color: var(--white) !important;
+            }
 
-            /* Texto geral */
+            /* Texto geral (fora da sidebar) */
             h1, h2, h3 { color: var(--oak-900); font-family: 'Playfair Display', serif; }
             p, span, label, .stMarkdown { color: var(--ink); }
 
-            /* Inputs */
+            /* ---------------- INPUTS ---------------- */
             .stTextInput input, .stNumberInput input, .stDateInput input,
             div[data-baseweb="select"] > div, div[data-baseweb="base-input"] {
                 background-color: var(--white) !important;
@@ -90,10 +104,36 @@ def inject_theme():
             .stTextInput label, .stNumberInput label, .stDateInput label,
             .stSelectbox label, .stSlider label { color: var(--oak-700) !important; }
 
-            /* Botões */
+            /* Texto das opções dentro do dropdown do selectbox/multiselect */
+            div[data-baseweb="popover"] li,
+            div[data-baseweb="menu"] li {
+                color: var(--ink) !important;
+                background-color: var(--white) !important;
+            }
+
+            /* Botões de incremento/decremento (+/-) do st.number_input — sem isto,
+               os ícones herdavam uma cor clara pensada para fundo escuro e ficavam
+               invisíveis sobre o novo fundo claro. */
+            button[data-testid="stNumberInputStepUp"],
+            button[data-testid="stNumberInputStepDown"] {
+                background-color: var(--white) !important;
+                border: 1px solid rgba(47, 74, 56, 0.35) !important;
+            }
+            button[data-testid="stNumberInputStepUp"] svg,
+            button[data-testid="stNumberInputStepDown"] svg {
+                fill: var(--oak-700) !important;
+                color: var(--oak-700) !important;
+            }
+
+            /* Botão "x" de limpar texto nos campos de texto/select */
+            div[data-baseweb="select"] svg {
+                fill: var(--oak-700) !important;
+            }
+
+            /* ---------------- BOTÕES ---------------- */
             .stButton button, .stDownloadButton button {
                 background: linear-gradient(135deg, var(--oak-900) 0%, var(--oak-700) 55%, var(--oak-500) 100%);
-                color: var(--white);
+                color: var(--white) !important;
                 border: 1px solid var(--oak-600);
                 font-weight: 600;
                 letter-spacing: 0.02em;
@@ -102,10 +142,13 @@ def inject_theme():
             .stButton button:hover, .stDownloadButton button:hover {
                 transform: translateY(-1px);
                 box-shadow: 0 6px 16px rgba(47, 74, 56, 0.3);
-                color: var(--white);
+                color: var(--white) !important;
+            }
+            .stButton button *, .stDownloadButton button * {
+                color: var(--white) !important;
             }
 
-            /* Cartões de métricas */
+            /* ---------------- CARTÕES DE MÉTRICAS ---------------- */
             div[data-testid="stMetric"] {
                 background: linear-gradient(155deg, var(--white) 0%, var(--cream) 100%);
                 border: 1px solid var(--oak-300);
@@ -116,25 +159,25 @@ def inject_theme():
             div[data-testid="stMetricValue"] { color: var(--oak-900); }
             div[data-testid="stMetricLabel"] { color: var(--oak-500); }
 
-            /* Tabelas / dataframes */
+            /* ---------------- TABELAS / DATAFRAMES ---------------- */
             div[data-testid="stDataFrame"], div[data-testid="stTable"] {
                 border: 1px solid var(--oak-300);
                 border-radius: 10px;
                 overflow: hidden;
             }
 
-            /* Expanders */
+            /* ---------------- EXPANDERS ---------------- */
             div[data-testid="stExpander"] {
                 background: var(--mist);
                 border: 1px solid var(--oak-300);
                 border-radius: 10px;
             }
 
-            /* Tabs */
+            /* ---------------- TABS ---------------- */
             button[data-baseweb="tab"] { color: var(--oak-500); }
             button[data-baseweb="tab"][aria-selected="true"] { color: var(--oak-900); border-bottom-color: var(--oak-600); }
 
-            /* Alerts (info / success / warning / error) */
+            /* ---------------- ALERTS (info / success / warning / error) ---------------- */
             div[data-testid="stAlert"] {
                 background: var(--oak-100);
                 border: 1px solid var(--oak-300);
