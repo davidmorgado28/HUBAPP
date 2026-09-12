@@ -239,13 +239,27 @@ def generate_styled_html_report(data, results_summary, tables_dict):
         </div>
         """
 
-    hist_abs_rows = ""
-    for idx, row in data["historical_df"].iterrows():
-        hist_abs_rows += f"<tr><td class='row-label'>{idx}</td>" + "".join([f"<td>${v:,.2f}B</td>" for v in row]) + "</tr>"
+    # --------------------------------------------------------------------------
+    # CORREÇÃO DAS TABELAS HISTÓRICAS
+    # --------------------------------------------------------------------------
+    hist_df = data["historical_df"]
+    hist_ratios_df = data["historical_ratios_df"]
 
+    # Obter os rótulos formatados das datas/anos para o cabeçalho (ex: 2020, 2021...)
+    date_headers_abs = "".join([f"<th>{pd.to_datetime(d).strftime('%Y') if hasattr(d, 'strftime') else str(d)}</th>" for d in hist_df.index])
+    date_headers_pct = "".join([f"<th>{pd.to_datetime(d).strftime('%Y') if hasattr(d, 'strftime') else str(d)}</th>" for d in hist_ratios_df.index])
+
+    # 1. Demonstrações Financeiras ($B) - Métrica na 1ª coluna, Valores/Anos nas restantes
+    hist_abs_rows = ""
+    for col in hist_df.columns:
+        vals = "".join([f"<td>${v:,.2f}B</td>" for v in hist_df[col]])
+        hist_abs_rows += f"<tr><td class='row-label'>{col}</td>{vals}</tr>"
+
+    # 2. Rácios & Margens Históricas (%) - Métrica na 1ª coluna, Valores/Anos nas restantes
     hist_pct_rows = ""
-    for idx, row in data["historical_ratios_df"].iterrows():
-        hist_pct_rows += f"<tr><td class='row-label'>{idx}</td>" + "".join([f"<td>{v:.2f}%</td>" for v in row]) + "</tr>"
+    for col in hist_ratios_df.columns:
+        vals = "".join([f"<td>{v:.2f}%</td>" for v in hist_ratios_df[col]])
+        hist_pct_rows += f"<tr><td class='row-label'>{col}</td>{vals}</tr>"
 
     html_template = f"""
     <!DOCTYPE html>
@@ -316,14 +330,14 @@ def generate_styled_html_report(data, results_summary, tables_dict):
             <div class="section-card">
                 <h3 class="section-subtitle">Demonstrações Financeiras ($B)</h3>
                 <table class="custom-table">
-                    <thead><tr><th>Métrica</th>{''.join([f'<th>Ano -{5-i}</th>' for i in range(5)])}</tr></thead>
+                    <thead><tr><th>Métrica</th>{date_headers_abs}</tr></thead>
                     <tbody>{hist_abs_rows}</tbody>
                 </table>
             </div>
             <div class="section-card">
                 <h3 class="section-subtitle">Rácios & Margens Históricas (%)</h3>
                 <table class="custom-table">
-                    <thead><tr><th>Rácio / Margem</th>{''.join([f'<th>Ano -{5-i}</th>' for i in range(5)])}</tr></thead>
+                    <thead><tr><th>Rácio / Margem</th>{date_headers_pct}</tr></thead>
                     <tbody>{hist_pct_rows}</tbody>
                 </table>
             </div>
@@ -333,7 +347,6 @@ def generate_styled_html_report(data, results_summary, tables_dict):
     </html>
     """
     return html_template
-
 
 # ------------------------------------------------------------------------------
 # 3. MOTOR DE CÁLCULO DO DCF (lógica inalterada)
