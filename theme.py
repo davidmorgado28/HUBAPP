@@ -66,9 +66,7 @@ def inject_theme():
                 background: linear-gradient(180deg, var(--mist) 0%, var(--white) 100%);
                 border-right: 1px solid rgba(47, 74, 56, 0.2);
             }
-            /* Texto normal da sidebar (labels, parágrafos, legendas, markdown) — NÃO usar
-               seletor universal aqui: isso também apanharia o texto dos botões e forçaria
-               texto escuro sobre botões de fundo verde escuro, tornando-os ilegíveis. */
+            /* Texto normal da sidebar */
             section[data-testid="stSidebar"] label,
             section[data-testid="stSidebar"] p,
             section[data-testid="stSidebar"] span,
@@ -84,19 +82,14 @@ def inject_theme():
                 font-family: 'Playfair Display', serif;
                 color: var(--oak-700) !important;
             }
-            /* Botões dentro da sidebar mantêm texto branco sobre o fundo verde escuro.
-               IMPORTANTE: inclui também os elementos filhos (button *) com o mesmo
-               prefixo da sidebar, para ter mais especificidade do que a regra
-               "section[...] p/span" acima — sem isto, o texto do botão (que o
-               Streamlit envolve num <p> ou <div> interno) ficava escuro na mesma. */
+            /* Botões dentro da sidebar */
             section[data-testid="stSidebar"] .stButton button,
             section[data-testid="stSidebar"] .stButton button *,
             section[data-testid="stSidebar"] .stDownloadButton button,
             section[data-testid="stSidebar"] .stDownloadButton button * {
                 color: var(--white) !important;
             }
-            /* Ícone/botão de calendário do date_input — mesmo tratamento, caso o
-               Streamlit o renderize como botão clicável em vez de simples ícone. */
+            /* Ícone/botão de calendário do date_input */
             section[data-testid="stSidebar"] .stDateInput button,
             section[data-testid="stSidebar"] .stDateInput button *,
             .stDateInput button,
@@ -118,8 +111,9 @@ def inject_theme():
                 color: var(--ink) !important;
                 border: 1px solid rgba(47, 74, 56, 0.35) !important;
             }
+            /* Alterado para var(--white) para meter os rótulos a branco */
             .stTextInput label, .stNumberInput label, .stDateInput label,
-            .stSelectbox label, .stSlider label { color: var(--oak-700) !important; }
+            .stSelectbox label, .stSlider label { color: var(--white) !important; }
 
             /* Texto das opções dentro do dropdown do selectbox/multiselect */
             div[data-baseweb="popover"] li,
@@ -128,9 +122,7 @@ def inject_theme():
                 background-color: var(--white) !important;
             }
 
-            /* Botões de incremento/decremento (+/-) do st.number_input — sem isto,
-               os ícones herdavam uma cor clara pensada para fundo escuro e ficavam
-               invisíveis sobre o novo fundo claro. */
+            /* Botões de incremento/decremento (+/-) do st.number_input */
             button[data-testid="stNumberInputStepUp"],
             button[data-testid="stNumberInputStepDown"] {
                 background-color: var(--white) !important;
@@ -189,9 +181,6 @@ def inject_theme():
                 border: 1px solid var(--oak-300);
                 border-radius: 10px;
             }
-            /* Cabeçalho do expander (seta + texto) — o Streamlit assume por vezes
-               um tema base escuro nestes componentes nativos e pinta-os a branco;
-               força-se aqui a cor certa para o novo fundo claro. */
             div[data-testid="stExpander"] summary,
             div[data-testid="stExpander"] summary p,
             div[data-testid="stExpander"] summary span {
@@ -210,13 +199,10 @@ def inject_theme():
             div[data-testid="stToggle"] label span {
                 color: var(--ink) !important;
             }
-            /* Contorno do círculo/caixa não selecionada do radio e checkbox */
             div[data-testid="stRadio"] label div:first-child,
             div[data-testid="stCheckbox"] label span:first-child {
                 border-color: var(--oak-600) !important;
             }
-            /* Texto dentro do "pill" selecionado do radio horizontal, quando o
-               fundo fica colorido (verde) — garante contraste em ambos os casos */
             div[data-testid="stRadio"] label[data-checked="true"] p,
             div[data-testid="stRadio"] label[aria-checked="true"] p {
                 color: var(--white) !important;
@@ -236,7 +222,6 @@ def inject_theme():
             div[data-baseweb="select"] svg {
                 fill: var(--oak-700) !important;
             }
-            /* Tags de itens selecionados no multiselect */
             div[data-baseweb="tag"] {
                 background-color: var(--oak-700) !important;
             }
