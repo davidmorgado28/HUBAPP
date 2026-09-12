@@ -84,10 +84,27 @@ def inject_theme():
                 font-family: 'Playfair Display', serif;
                 color: var(--oak-700) !important;
             }
-            /* Botões dentro da sidebar mantêm texto branco sobre o fundo verde escuro */
+            /* Botões dentro da sidebar mantêm texto branco sobre o fundo verde escuro.
+               IMPORTANTE: inclui também os elementos filhos (button *) com o mesmo
+               prefixo da sidebar, para ter mais especificidade do que a regra
+               "section[...] p/span" acima — sem isto, o texto do botão (que o
+               Streamlit envolve num <p> ou <div> interno) ficava escuro na mesma. */
             section[data-testid="stSidebar"] .stButton button,
-            section[data-testid="stSidebar"] .stDownloadButton button {
+            section[data-testid="stSidebar"] .stButton button *,
+            section[data-testid="stSidebar"] .stDownloadButton button,
+            section[data-testid="stSidebar"] .stDownloadButton button * {
                 color: var(--white) !important;
+            }
+            /* Ícone/botão de calendário do date_input — mesmo tratamento, caso o
+               Streamlit o renderize como botão clicável em vez de simples ícone. */
+            section[data-testid="stSidebar"] .stDateInput button,
+            section[data-testid="stSidebar"] .stDateInput button *,
+            .stDateInput button,
+            .stDateInput button * {
+                color: var(--white) !important;
+            }
+            .stDateInput svg {
+                fill: var(--oak-700) !important;
             }
 
             /* Texto geral (fora da sidebar) */
