@@ -1,8 +1,20 @@
 # ==============================================================================
-# 🏢 ANÁLISE COMPREENSIVA DE REITs — Aplicação Streamlit
-# Convertido a partir do notebook original (Colab, ipywidgets) para uma página
-# do hub Streamlit. O visual "Executive Dashboard" (CSS customizado) foi
-# mantido integralmente, renderizado via st.markdown(unsafe_allow_html=True).
+# 🏢 PEER BENCHMARK DE REITs — Aplicação Streamlit
+# Versão focada exclusivamente na comparação de rácios com pares (peers)
+# escolhidos manualmente, seguida da análise textual. As secções de KPIs
+# individuais, parecer qualitativo isolado e evolução histórica a 4 anos
+# foram removidas a pedido.
+#
+# NOTA IMPORTANTE SOBRE FONTES DE DADOS:
+# A Yahoo Finance NÃO publica FFO/AFFO (são métricas específicas de REITs
+# que não constam do feed padrão). Por isso:
+#   - Dividend Yield, Total Debt, Total Cash e EBITDA são lidos DIRETAMENTE
+#     do campo `info` do yfinance (mesmo feed do site finance.yahoo.com).
+#   - Price/FFO, Price/AFFO, AFFO Payout Ratio e FFO Growth continuam a ser
+#     CALCULADOS a partir das demonstrações financeiras anuais, porque não
+#     há alternativa — mas o ano fiscal usado fica sempre visível na tabela
+#     (coluna "Ano Fiscal (FFO/AFFO)"), para que se saiba exatamente o que
+#     está a ser comparado e não se confunda com dados TTM de outro site.
 # ==============================================================================
 
 import sys
@@ -21,246 +33,159 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from theme import inject_theme, page_header
 
 st.set_page_config(
-    page_title="Análise de REITs",
+    page_title="Peer Benchmark de REITs",
     page_icon="🏢",
     layout="wide",
 )
 
 inject_theme()
 
-# ------------------------------------------------------------------------------
-# 1. CÁLCULO DE INDICADORES DE MERCADO (lógica inalterada)
-# ------------------------------------------------------------------------------
-@st.cache_data(show_spinner=False, ttl=3600)
-def calcular_metricas_mercado(ticker_symbol, rf_rate=0.045, period="3y"):
-    ticker = yf.Ticker(ticker_symbol)
-    hist = ticker.history(period=period)["Close"]
-
-    if hist.empty or len(hist) < 30:
-        return {}
-
-    sp500 = yf.Ticker("^GSPC").history(period=period)["Close"]
-    returns = hist.pct_change().dropna()
-    sp500_returns = sp500.pct_change().dropna()
-
-    df_returns = pd.concat([returns, sp500_returns], axis=1, keys=["REIT", "SP500"]).dropna()
-
-    volatility = df_returns["REIT"].std() * np.sqrt(252)
-    total_return = (1 + df_returns["REIT"]).prod() - 1
-    num_years = len(df_returns) / 252
-    annualized_return = (1 + total_return) ** (1 / num_years) - 1 if num_years > 0 else 0
-
-    sharpe_ratio = (annualized_return - rf_rate) / volatility if volatility != 0 else np.nan
-    cov = np.cov(df_returns["REIT"], df_returns["SP500"])[0][1]
-    var_sp500 = np.var(df_returns["SP500"])
-    beta = cov / var_sp500 if var_sp500 != 0 else np.nan
-
-    cumulative = (1 + df_returns["REIT"]).cumprod()
-    peak = cumulative.cummax()
-    drawdown = (cumulative - peak) / peak
-    max_drawdown = drawdown.min()
-
-    return {
-        "Beta": beta,
-        "Sharpe Ratio": sharpe_ratio,
-        "Volatilidade Anualizada": volatility,
-        "Max Drawdown": max_drawdown,
-    }
-
+MAX_PEERS = 6
 
 # ------------------------------------------------------------------------------
-# 2. EXTRAÇÃO E CÁLCULO HISTÓRICO DE REIT (4 ANOS) (lógica inalterada)
+# HELPERS
 # ------------------------------------------------------------------------------
-@st.cache_data(show_spinner=False, ttl=3600)
-def extrair_historico_reit(ticker_symbol):
-    reit = yf.Ticker(ticker_symbol)
-    info = reit.info
+def safe_div(num, denom):
+    if denom is None or num is None:
+        return np.nan
+    try:
+        if denom == 0 or np.isnan(denom) or np.isnan(num):
+            return np.nan
+    except TypeError:
+        return np.nan
+    return num / denom
 
-    financials = reit.financials
-    balance_sheet = reit.balance_sheet
-    cashflow = reit.cashflow
 
-    if financials.empty or balance_sheet.empty or cashflow.empty:
-        return None, None, None
+def _fmt_period_label(col):
+    """Converte a coluna de um DataFrame anual do yfinance (Timestamp)
+    numa etiqueta legível AAAA."""
+    try:
+        return pd.to_datetime(col).strftime("%Y")
+    except Exception:
+        return str(col)[:4]
 
-    anos = [pd.to_datetime(col).strftime("%Y") for col in financials.columns[:4]]
-    num_anos = len(anos)
 
-    price = info.get("currentPrice") or info.get("previousClose", 0)
-    shares_outstanding = info.get("sharesOutstanding", 1)
-    company_name = info.get("longName", ticker_symbol)
-    sector = info.get("sector", "Real Estate")
-    industry = info.get("industry", "REIT")
+def parse_peer_tickers(raw_text, main_ticker):
+    """Converte o texto livre de peers numa lista limpa, sem duplicados
+    e sem o próprio ticker principal. Não faz nenhuma seleção automática:
+    apenas normaliza o que o utilizador escreveu."""
+    if not raw_text or not raw_text.strip():
+        return [], []
 
-    historico = {
-        "Valuation": {"Price / FFO": [], "Price / AFFO": []},
-        "Rentabilidade": {"FFO Margin": [], "AFFO Margin": [], "NOI Margin (Est.)": [], "EBITDA Margin": []},
-        "Dividendos": {"Dividend Yield": [], "Dividend Growth": [], "FFO Payout Ratio": [], "AFFO Payout Ratio": []},
-        "Endividamento": {"Net Debt / EBITDA": [], "Debt / Equity": [], "Interest Coverage": []},
-        "Crescimento": {"FFO Growth": [], "AFFO Growth": []},
-    }
+    candidates = [p.strip().upper() for p in raw_text.split(",") if p.strip()]
 
-    ffo_list = []
-    affo_list = []
-    div_yield_list = []
+    seen = set()
+    cleaned = []
+    dropped_self = []
+    for c in candidates:
+        if c == main_ticker:
+            dropped_self.append(c)
+            continue
+        if c not in seen:
+            seen.add(c)
+            cleaned.append(c)
 
-    for i in range(num_anos):
-        net_income = financials.loc["Net Income"].iloc[i] if "Net Income" in financials.index else 0
-        ebitda = financials.loc["EBITDA"].iloc[i] if "EBITDA" in financials.index else (info.get("ebitda", 1))
-        revenue = financials.loc["Total Revenue"].iloc[i] if "Total Revenue" in financials.index else 1
+    return cleaned, dropped_self
 
-        depreciation = 0
+
+# ------------------------------------------------------------------------------
+# CÁLCULO DE MÉTRICAS POR TICKER
+# ------------------------------------------------------------------------------
+def obter_metricas_peer_reit(ticker_symbol):
+    """Devolve os rácios de comparação para um REIT.
+
+    Dividend Yield, EBITDA e Net Debt vêm diretamente do campo `info` da
+    Yahoo (mesmo feed do site). Price/FFO, Price/AFFO, AFFO Payout e FFO
+    Growth são calculados a partir das demonstrações financeiras anuais,
+    já que a Yahoo não publica FFO/AFFO. Nunca substitui um componente em
+    falta por uma estimativa silenciosa — regista o aviso e assume 0,
+    devolvendo a lista de avisos ao chamador para ser mostrada ao utilizador.
+    """
+    t = yf.Ticker(ticker_symbol)
+    info = t.info
+
+    price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose")
+    shares = info.get("sharesOutstanding")
+
+    if not info or price is None:
+        raise ValueError(f"Sem dados de mercado disponíveis para '{ticker_symbol}'.")
+
+    financials = t.financials
+    cashflow = t.cashflow
+
+    if financials is None or financials.empty or cashflow is None or cashflow.empty or not shares:
+        raise ValueError(f"Demonstrações financeiras insuficientes para calcular FFO/AFFO de '{ticker_symbol}'.")
+
+    avisos = []
+
+    def get_row(df, name, col_idx, default=0.0, warn_label=None):
+        if name in df.index and col_idx < df.shape[1]:
+            val = df.loc[name].iloc[col_idx]
+            if pd.notna(val):
+                return val
+        if warn_label:
+            avisos.append(f"{ticker_symbol}: {warn_label} em falta — assumido como 0 no cálculo de FFO/AFFO.")
+        return default
+
+    num_years = financials.shape[1]
+    ffo_hist = []
+    for i in range(min(2, num_years)):
+        net_income = get_row(financials, "Net Income", i, warn_label="Net Income")
         if "Reconciled Depreciations" in cashflow.index:
-            depreciation = cashflow.loc["Reconciled Depreciations"].iloc[i]
-        elif "Depreciation And Amortization" in cashflow.index:
-            depreciation = cashflow.loc["Depreciation And Amortization"].iloc[i]
-
-        capex = abs(cashflow.loc["Capital Expenditure"].iloc[i]) if "Capital Expenditure" in cashflow.index else 0
-        gain_sale = financials.loc["Gain Loss On Sale Of Assets"].iloc[i] if "Gain Loss On Sale Of Assets" in financials.index else 0
+            depreciation = get_row(cashflow, "Reconciled Depreciations", i)
+        else:
+            depreciation = get_row(cashflow, "Depreciation And Amortization", i, warn_label="Depreciação/Amortização")
+        capex = abs(get_row(cashflow, "Capital Expenditure", i, warn_label="CapEx (proxy para manutenção)"))
+        gain_sale = get_row(financials, "Gain Loss On Sale Of Assets", i)
 
         ffo = net_income + depreciation - gain_sale
         affo = ffo - capex
-        ffo_per_share = ffo / shares_outstanding if shares_outstanding > 0 else 0
-        affo_per_share = affo / shares_outstanding if shares_outstanding > 0 else 0
+        ffo_hist.append((ffo, affo))
 
-        ffo_list.append(ffo)
-        affo_list.append(affo)
+    ffo_atual, affo_atual = ffo_hist[0]
 
-        op_income = financials.loc["Operating Income"].iloc[i] if "Operating Income" in financials.index else 0
-        noi_est = op_income + depreciation
+    ffo_growth = np.nan
+    if len(ffo_hist) > 1:
+        ffo_anterior = ffo_hist[1][0]
+        if pd.notna(ffo_anterior) and ffo_anterior != 0:
+            ffo_growth = (ffo_atual - ffo_anterior) / abs(ffo_anterior)
 
-        total_debt = balance_sheet.loc["Total Debt"].iloc[i] if "Total Debt" in balance_sheet.index else 0
-        cash = balance_sheet.loc["Cash Cash Equivalents And Short Term Investments"].iloc[i] if "Cash Cash Equivalents And Short Term Investments" in balance_sheet.index else 0
-        net_debt = total_debt - cash
-        total_equity = balance_sheet.loc["Stockholders Equity"].iloc[i] if "Stockholders Equity" in balance_sheet.index else 1
-        interest = abs(financials.loc["Interest Expense"].iloc[i]) if "Interest Expense" in financials.index else 0
+    ffo_per_share = safe_div(ffo_atual, shares)
+    affo_per_share = safe_div(affo_atual, shares)
+    price_ffo = safe_div(price, ffo_per_share) if ffo_per_share and ffo_per_share > 0 else np.nan
+    price_affo = safe_div(price, affo_per_share) if affo_per_share and affo_per_share > 0 else np.nan
 
-        div_paid = abs(cashflow.loc["Common Stock Dividend Paid"].iloc[i]) if "Common Stock Dividend Paid" in cashflow.index else 0
-        div_y = (div_paid / shares_outstanding) / price if (price > 0 and shares_outstanding > 0) else info.get("dividendYield", 0)
-        div_yield_list.append(div_y)
+    # --- Métricas obtidas diretamente da Yahoo Finance (mesmo feed do site) ---
+    dividend_yield = info.get("dividendYield", np.nan)
+    if pd.notna(dividend_yield) and dividend_yield > 1:
+        # Algumas versões do yfinance devolvem o yield já em percentagem (ex. 4.5);
+        # normaliza-se apenas quando isso é detetado, sem alterar o valor de origem.
+        dividend_yield = dividend_yield / 100
 
-        historico["Valuation"]["Price / FFO"].append(price / ffo_per_share if ffo_per_share > 0 else np.nan)
-        historico["Valuation"]["Price / AFFO"].append(price / affo_per_share if affo_per_share > 0 else np.nan)
+    ebitda_ttm = info.get("ebitda", np.nan)
+    total_debt = info.get("totalDebt", np.nan)
+    total_cash = info.get("totalCash", np.nan)
+    net_debt = (total_debt - total_cash) if pd.notna(total_debt) and pd.notna(total_cash) else np.nan
+    net_debt_ebitda = safe_div(net_debt, ebitda_ttm)
 
-        historico["Rentabilidade"]["FFO Margin"].append(ffo / revenue if revenue > 0 else np.nan)
-        historico["Rentabilidade"]["AFFO Margin"].append(affo / revenue if revenue > 0 else np.nan)
-        historico["Rentabilidade"]["NOI Margin (Est.)"].append(noi_est / revenue if revenue > 0 else np.nan)
-        historico["Rentabilidade"]["EBITDA Margin"].append(ebitda / revenue if revenue > 0 else np.nan)
+    # AFFO Payout Ratio: métrica calculada (a Yahoo não publica payout sobre AFFO,
+    # só sobre EPS), por isso usa-se o dividendo em caixa efetivamente pago.
+    div_paid = abs(get_row(cashflow, "Common Stock Dividend Paid", 0))
+    affo_payout = safe_div(div_paid, affo_atual) if affo_atual and affo_atual > 0 else np.nan
 
-        historico["Dividendos"]["Dividend Yield"].append(div_y)
-        historico["Dividendos"]["FFO Payout Ratio"].append(div_paid / ffo if ffo > 0 else np.nan)
-        historico["Dividendos"]["AFFO Payout Ratio"].append(div_paid / affo if affo > 0 else np.nan)
+    fiscal_year_label = _fmt_period_label(financials.columns[0])
 
-        historico["Endividamento"]["Net Debt / EBITDA"].append(net_debt / ebitda if ebitda > 0 else np.nan)
-        historico["Endividamento"]["Debt / Equity"].append(total_debt / total_equity if total_equity > 0 else np.nan)
-        historico["Endividamento"]["Interest Coverage"].append(ebitda / interest if interest > 0 else np.nan)
-
-    for i in range(num_anos):
-        if i < num_anos - 1:
-            ffo_g = (ffo_list[i] - ffo_list[i + 1]) / ffo_list[i + 1] if ffo_list[i + 1] > 0 else np.nan
-            affo_g = (affo_list[i] - affo_list[i + 1]) / affo_list[i + 1] if affo_list[i + 1] > 0 else np.nan
-            div_g = (div_yield_list[i] - div_yield_list[i + 1]) / div_yield_list[i + 1] if div_yield_list[i + 1] > 0 else np.nan
-        else:
-            ffo_g, affo_g, div_g = np.nan, np.nan, np.nan
-
-        historico["Crescimento"]["FFO Growth"].append(ffo_g)
-        historico["Crescimento"]["AFFO Growth"].append(affo_g)
-        historico["Dividendos"]["Dividend Growth"].append(div_g)
-
-    metricas_mercado = calcular_metricas_mercado(ticker_symbol)
-    historico["Indicadores de Mercado"] = {k: [v] * num_anos for k, v in metricas_mercado.items()}
-
-    meta = {"name": company_name, "price": price, "sector": sector, "industry": industry}
-
-    return anos, historico, meta
-
-
-# ------------------------------------------------------------------------------
-# 3. COMPARATIVO DE CONCORRENTES (lógica inalterada)
-# ------------------------------------------------------------------------------
-def obter_resumo_concorrente(symbol):
-    try:
-        anos, hist, meta = extrair_historico_reit(symbol)
-        if not hist:
-            return None
-        return {
-            "Ticker": symbol,
-            "Price / FFO": hist["Valuation"]["Price / FFO"][0],
-            "Price / AFFO": hist["Valuation"]["Price / AFFO"][0],
-            "Dividend Yield": hist["Dividendos"]["Dividend Yield"][0],
-            "AFFO Payout": hist["Dividendos"]["AFFO Payout Ratio"][0],
-            "Net Debt / EBITDA": hist["Endividamento"]["Net Debt / EBITDA"][0],
-            "FFO Growth (YoY)": hist["Crescimento"]["FFO Growth"][0],
-        }
-    except Exception:
-        return None
-
-
-# ------------------------------------------------------------------------------
-# 4. GERADOR DE PARECER (lógica inalterada)
-# ------------------------------------------------------------------------------
-def gerar_parecer(symbol, anos, hist):
-    p_affo = hist["Valuation"]["Price / AFFO"][0]
-    payout_affo = hist["Dividendos"]["AFFO Payout Ratio"][0]
-    div_yield = hist["Dividendos"]["Dividend Yield"][0]
-    net_debt_ebitda = hist["Endividamento"]["Net Debt / EBITDA"][0]
-
-    parecer = "<div>"
-
-    if pd.notna(p_affo):
-        if p_affo < 15:
-            val_status = "<span class='badge badge-success'>Atrativo</span>"
-            val_txt = f"O REIT negoceia a um múltiplo <b>Price/AFFO bastante atrativo ({p_affo:.2f}x)</b>, abaixo das médias históricas do setor imobiliário."
-        elif p_affo <= 20:
-            val_status = "<span class='badge badge-info'>Fair Value</span>"
-            val_txt = f"O múltiplo <b>Price/AFFO de {p_affo:.2f}x</b> reflete uma avaliação equilibrada dentro do valor justo de mercado."
-        else:
-            val_status = "<span class='badge badge-warning'>Prémio Elevado</span>"
-            val_txt = f"O rácio <b>Price/AFFO elevado ({p_affo:.2f}x)</b> indica que o mercado exige um prémio substancial pela qualidade dos ativos ou perspetivas de crescimento."
-    else:
-        val_status, val_txt = "<span class='badge badge-neutral'>N/A</span>", "Múltiplo Price/AFFO indisponível."
-
-    if pd.notna(payout_affo) and pd.notna(div_yield):
-        if payout_affo < 0.85:
-            div_status = "<span class='badge badge-success'>Sustentável</span>"
-            div_txt = f"O rendimento por dividendo (<b>{div_yield*100:.2f}%</b>) está confortavelmente protegido por um <b>AFFO Payout Ratio de {payout_affo*100:.1f}%</b>."
-        elif payout_affo <= 1.0:
-            div_status = "<span class='badge badge-warning'>Acompanhar</span>"
-            div_txt = f"A distribuição de dividendos (<b>{div_yield*100:.2f}%</b>) encontra-se num limite ajustado face ao caixa gerado (<b>AFFO Payout: {payout_affo*100:.1f}%</b>)."
-        else:
-            div_status = "<span class='badge badge-danger'>Risco Elevado</span>"
-            div_txt = f"<b>Alerta de Cobertura:</b> O AFFO Payout Ratio de <b>{payout_affo*100:.1f}%</b> indica que os dividendos excedem a geração operacional orgânica de caixa."
-    else:
-        div_status, div_txt = "<span class='badge badge-neutral'>N/A</span>", "Métricas de dividendos indisponíveis."
-
-    if pd.notna(net_debt_ebitda):
-        if net_debt_ebitda < 6.0:
-            debt_status = "<span class='badge badge-success'>Sólido</span>"
-            debt_txt = f"Nível de alavancagem seguro e controlado com <b>Net Debt/EBITDA de {net_debt_ebitda:.2f}x</b>."
-        else:
-            debt_status = "<span class='badge badge-danger'>Alavancado</span>"
-            debt_txt = f"Rácio de endividamento superior às recomendações conservadoras de mercado (<b>Net Debt/EBITDA de {net_debt_ebitda:.2f}x</b>)."
-    else:
-        debt_status, debt_txt = "<span class='badge badge-neutral'>N/A</span>", "Métrica de alavancagem indisponível."
-
-    parecer += f"""
-    <div class='insight-grid'>
-        <div class='insight-card'>
-            <div class='insight-header'>Valuation & Preço {val_status}</div>
-            <p>{val_txt}</p>
-        </div>
-        <div class='insight-card'>
-            <div class='insight-header'>Segurança dos Dividendos {div_status}</div>
-            <p>{div_txt}</p>
-        </div>
-        <div class='insight-card'>
-            <div class='insight-header'>Alavancagem & Risco {debt_status}</div>
-            <p>{debt_txt}</p>
-        </div>
-    </div>
-    </div>
-    """
-    return parecer
+    metrics = {
+        "Ticker": ticker_symbol,
+        "Price / FFO": price_ffo,
+        "Price / AFFO": price_affo,
+        "Dividend Yield": dividend_yield,
+        "AFFO Payout": affo_payout,
+        "Net Debt / EBITDA": net_debt_ebitda,
+        "FFO Growth (YoY)": ffo_growth,
+        "Ano Fiscal (FFO/AFFO)": fiscal_year_label,
+    }
+    return metrics, avisos, info
 
 
 def gerar_apreciacao_peers(symbol, df_peers):
@@ -318,7 +243,7 @@ def gerar_apreciacao_peers(symbol, df_peers):
 
 
 # ------------------------------------------------------------------------------
-# 5. ESTILO CSS — paleta OAK & VALUE (branco quente + verde carvalho)
+# ESTILO CSS — paleta OAK & VALUE (branco quente + verde carvalho)
 # ------------------------------------------------------------------------------
 CSS_STYLES = """
 <style>
@@ -339,17 +264,13 @@ CSS_STYLES = """
     }
     .hero-title { font-size: 26px; font-weight: 700; margin: 0 0 4px 0; letter-spacing: -0.02em; }
     .hero-subtitle { color: #B7CCBB; font-size: 13px; margin: 0; }
-    .kpi-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
-    .kpi-card { background: #ffffff; border: 1px solid rgba(47,74,56,0.15); border-radius: 12px; padding: 18px; box-shadow: 0 2px 8px rgba(30,46,34,0.04); }
-    .kpi-label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: #4F7058; letter-spacing: 0.05em; margin-bottom: 6px; }
-    .kpi-value { font-size: 22px; font-weight: 700; color: #1E2E22; }
+    .freshness-note { font-size: 12px; color: #4F7058; margin-top: -6px; margin-bottom: 18px; }
     .section-title { font-size: 17px; font-weight: 700; color: #1E2E22; margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px; }
     .section-title::before { content: ''; display: inline-block; width: 4px; height: 18px; background: #2E7D4C; border-radius: 2px; }
     .custom-table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 12px; font-size: 13px; }
     .custom-table th { background-color: #DCE6DE; color: #4F7058; font-weight: 600; padding: 10px 14px; text-align: center; border-bottom: 2px solid rgba(47,74,56,0.15); }
     .custom-table th:first-child { text-align: left; border-top-left-radius: 8px; }
     .custom-table th:last-child { border-top-right-radius: 8px; }
-    .custom-table tr.category-row th { background-color: #1E2E22; color: #DCE6DE; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; padding: 8px 14px; }
     .custom-table td { padding: 10px 14px; border-bottom: 1px solid rgba(47,74,56,0.08); color: #1C2420; }
     .custom-table tr:hover td { background-color: rgba(47,74,56,0.05); }
     .badge { display: inline-block; padding: 4px 10px; border-radius: 9999px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
@@ -358,75 +279,8 @@ CSS_STYLES = """
     .badge-danger { background: #fee2e2; color: #991b1b; }
     .badge-info { background: #dbeafe; color: #1e40af; }
     .badge-neutral { background: #DCE6DE; color: #4F7058; }
-    .insight-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 12px; }
-    .insight-card { background: #F2F5F0; border: 1px solid rgba(47,74,56,0.15); border-radius: 12px; padding: 16px; }
-    .insight-header { font-size: 13px; font-weight: 700; color: #1E2E22; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
-    .insight-card p { font-size: 12px; color: #4F7058; line-height: 1.5; margin: 0; }
 </style>
 """
-
-
-def formatar_kpis(hist):
-    p_affo = hist["Valuation"]["Price / AFFO"][0]
-    div_y = hist["Dividendos"]["Dividend Yield"][0]
-    affo_payout = hist["Dividendos"]["AFFO Payout Ratio"][0]
-    net_debt = hist["Endividamento"]["Net Debt / EBITDA"][0]
-
-    return f"""
-    <div class='kpi-container'>
-        <div class='kpi-card'>
-            <div class='kpi-label'>Price / AFFO</div>
-            <div class='kpi-value'>{f"{p_affo:.2f}x" if pd.notna(p_affo) else "N/A"}</div>
-        </div>
-        <div class='kpi-card'>
-            <div class='kpi-label'>Dividend Yield</div>
-            <div class='kpi-value'>{f"{div_y*100:.2f}%" if pd.notna(div_y) else "N/A"}</div>
-        </div>
-        <div class='kpi-card'>
-            <div class='kpi-label'>AFFO Payout Ratio</div>
-            <div class='kpi-value'>{f"{affo_payout*100:.1f}%" if pd.notna(affo_payout) else "N/A"}</div>
-        </div>
-        <div class='kpi-card'>
-            <div class='kpi-label'>Net Debt / EBITDA</div>
-            <div class='kpi-value'>{f"{net_debt:.2f}x" if pd.notna(net_debt) else "N/A"}</div>
-        </div>
-    </div>
-    """
-
-
-def formatar_tabela_historica_pretty(anos, dados):
-    headers = "".join([f"<th>{ano}</th>" for ano in anos])
-    linhas = []
-
-    for cat, metricas in dados.items():
-        linhas.append(f"<tr class='category-row'><th colspan='{len(anos)+1}'>{cat}</th></tr>")
-        for metrica, valores in metricas.items():
-            cols = []
-            for v in valores:
-                if isinstance(v, float):
-                    if any(kw in metrica for kw in ["Margin", "Yield", "Ratio", "Growth", "Drawdown", "Volatilidade"]):
-                        cols.append(f"<td style='text-align: center;'><b>{v * 100:.2f}%</b></td>" if pd.notna(v) else "<td style='text-align: center; color: #8FA096;'>—</td>")
-                    elif any(kw in metrica for kw in ["Price", "Coverage", "Beta", "Sharpe", "Debt"]):
-                        if pd.notna(v):
-                            suffix = "x" if ("Price" in metrica or "Debt" in metrica or "Coverage" in metrica) else ""
-                            cols.append(f"<td style='text-align: center;'>{v:.2f}{suffix}</td>")
-                        else:
-                            cols.append("<td style='text-align: center; color: #8FA096;'>—</td>")
-                    else:
-                        cols.append(f"<td style='text-align: center;'>{v:.2f}</td>" if pd.notna(v) else "<td style='text-align: center; color: #8FA096;'>—</td>")
-                else:
-                    cols.append(f"<td style='text-align: center;'>{v}</td>")
-
-            linhas.append(f"<tr><td style='font-weight: 500;'>{metrica}</td>{''.join(cols)}</tr>")
-
-    return f"""
-    <div class='report-card'>
-        <div class='section-title'>Evolução Histórica das Métricas (4 Anos Fiscais)</div>
-        <table class='custom-table'>
-            <thead><tr><th>Rácio / Indicador</th>{headers}</tr></thead>
-            <tbody>{''.join(linhas)}</tbody>
-        </table>
-    </div>"""
 
 
 def formatar_tabela_peers_pretty(df_peers):
@@ -437,9 +291,11 @@ def formatar_tabela_peers_pretty(df_peers):
     for idx, row in df_peers.iterrows():
         cols = []
         for col, val in row.items():
-            if col == "Ticker":
-                cols.append(f"<td style='font-weight: 700; text-align: center; color: #1E2E22;'>{val}</td>")
-            elif "%" in col or "Yield" in col or "Payout" in col or "Growth" in col:
+            if col in ("Ticker", "Ano Fiscal (FFO/AFFO)"):
+                weight = "700" if col == "Ticker" else "400"
+                color = "#1E2E22" if col == "Ticker" else "#4F7058"
+                cols.append(f"<td style='text-align: center; font-weight: {weight}; color: {color};'>{val}</td>")
+            elif "Yield" in col or "Payout" in col or "Growth" in col:
                 cols.append(f"<td style='text-align: center;'>{val * 100:.2f}%</td>" if pd.notna(val) else "<td style='text-align: center; color: #8FA096;'>—</td>")
             else:
                 cols.append(f"<td style='text-align: center;'>{val:.2f}x</td>" if pd.notna(val) else "<td style='text-align: center; color: #8FA096;'>—</td>")
@@ -448,6 +304,7 @@ def formatar_tabela_peers_pretty(df_peers):
     return f"""
     <div class='report-card'>
         <div class='section-title'>Análise Comparativa com Concorrentes</div>
+        <div class='freshness-note'>Dividend Yield, EBITDA e Net Debt vêm diretamente da Yahoo Finance. Price/FFO, Price/AFFO, AFFO Payout e FFO Growth são calculados a partir do ano fiscal indicado na última coluna, porque a Yahoo não publica FFO/AFFO.</div>
         <table class='custom-table'>
             <thead><tr>{headers}</tr></thead>
             <tbody>{''.join(linhas)}</tbody>
@@ -456,65 +313,99 @@ def formatar_tabela_peers_pretty(df_peers):
 
 
 # ------------------------------------------------------------------------------
-# 6. INTERFACE
+# INTERFACE
 # ------------------------------------------------------------------------------
 page_header(
     "🏢",
-    "Análise Compreensiva de REITs",
-    "Relatório executivo de REITs: FFO/AFFO, valuation, dividendos, alavancagem, risco de mercado e comparação com concorrentes.",
+    "Peer Benchmark de REITs",
+    "Comparação de rácios entre o REIT alvo e os concorrentes diretos escolhidos manualmente.",
 )
 
 with st.sidebar:
     st.header("⚙️ Configuração")
     ticker_main = st.text_input("REIT Alvo", value="O", placeholder="ex: O")
-    ticker_peers = st.text_input("Concorrentes (separados por vírgula)", value="NNN, ADC, MAIN", placeholder="ex: NNN, ADC")
-    btn_executar = st.button("🚀 Gerar Relatório Executivo", type="primary", use_container_width=True)
+    peers_input = st.text_input(
+        "Concorrentes (separados por vírgula)",
+        value="NNN, ADC, MAIN",
+        placeholder="ex: NNN, ADC, MAIN",
+        help=f"Máximo de {MAX_PEERS} tickers. Escolhe tu próprio os concorrentes diretos.",
+    )
 
-if btn_executar:
-    symbol = ticker_main.strip().upper()
-    peers_list = [p.strip().upper() for p in ticker_peers.split(",") if p.strip()]
+    main_ticker_upper = ticker_main.strip().upper()
+    peers_list, dropped_self = parse_peer_tickers(peers_input, main_ticker_upper)
 
-    with st.spinner(f"A obter dados e a construir o relatório para {symbol}..."):
-        anos, hist, meta = extrair_historico_reit(symbol)
+    if dropped_self:
+        st.warning(f"⚠️ Removi {', '.join(dropped_self)} da lista de peers, porque coincide com o ticker principal.")
 
-    if not hist:
-        st.error("❌ Não foi possível carregar os dados do REIT principal.")
+    if len(peers_list) > MAX_PEERS:
+        st.warning(f"⚠️ Indicaste {len(peers_list)} peers; apenas os primeiros {MAX_PEERS} serão usados: {', '.join(peers_list[:MAX_PEERS])}")
+        peers_list = peers_list[:MAX_PEERS]
+
+    if not peers_input.strip():
+        st.info("ℹ️ Indica pelo menos um peer para gerar a comparação.")
+    elif peers_list:
+        st.caption(f"Peers a usar: {', '.join(peers_list)}")
     else:
-        kpi_html = formatar_kpis(hist)
-        html_historico = formatar_tabela_historica_pretty(anos, hist)
+        st.error("❌ Nenhum peer válido foi reconhecido nesse texto. Verifica os tickers introduzidos.")
 
-        with st.spinner("A obter dados dos concorrentes..."):
-            peers_data = []
-            res_main = obter_resumo_concorrente(symbol)
-            if res_main:
-                peers_data.append(res_main)
-            for p in peers_list:
-                res_p = obter_resumo_concorrente(p)
-                if res_p:
-                    peers_data.append(res_p)
+    btn_executar = st.button("🚀 Gerar Comparação", type="primary", use_container_width=True, disabled=not peers_list)
 
-        df_peers = pd.DataFrame(peers_data)
+if btn_executar and peers_list:
+    symbol = main_ticker_upper
+
+    with st.spinner(f"A obter dados para {symbol} e {len(peers_list)} peer(s)..."):
+        peers_data = []
+        failed_tickers = []
+        todos_avisos = []
+        main_info = {}
+
+        try:
+            metrics_main, avisos_main, main_info = obter_metricas_peer_reit(symbol)
+            peers_data.append(metrics_main)
+            todos_avisos.extend(avisos_main)
+        except Exception as e:
+            st.error(f"❌ Não foi possível carregar os dados do REIT principal ({symbol}): {e}")
+            st.stop()
+
+        for p in peers_list:
+            try:
+                metrics_p, avisos_p, _ = obter_metricas_peer_reit(p)
+                peers_data.append(metrics_p)
+                todos_avisos.extend(avisos_p)
+            except Exception:
+                failed_tickers.append(p)
+
+    if failed_tickers:
+        st.warning(f"⚠️ Não foi possível obter dados para: {', '.join(failed_tickers)}. Foram excluídos da comparação.")
+
+    if todos_avisos:
+        with st.expander("⚠️ Avisos sobre componentes em falta no cálculo de FFO/AFFO"):
+            for a in dict.fromkeys(todos_avisos):  # remove duplicados mantendo ordem
+                st.markdown(f"- {a}")
+
+    df_peers = pd.DataFrame(peers_data)
+
+    if df_peers.shape[0] <= 1:
+        st.error("❌ Nenhum dos peers indicados devolveu dados válidos. Não é possível gerar a comparação.")
+    else:
         html_peers = formatar_tabela_peers_pretty(df_peers)
-        html_parecer = gerar_parecer(symbol, anos, hist)
         html_apreciacao_peers = gerar_apreciacao_peers(symbol, df_peers)
+
+        company_name = main_info.get("longName", symbol)
+        sector = main_info.get("sector", "Real Estate")
+        industry = main_info.get("industry", "REIT")
+        price = main_info.get("currentPrice") or main_info.get("regularMarketPrice") or main_info.get("previousClose") or 0
 
         hero_html = f"""
         <div class='hero-header'>
             <div>
-                <div class='hero-subtitle'>{meta['sector']} • {meta['industry']}</div>
-                <div class='hero-title'>{meta['name']} ({symbol})</div>
+                <div class='hero-subtitle'>{sector} • {industry}</div>
+                <div class='hero-title'>{company_name} ({symbol})</div>
             </div>
             <div style='text-align: right;'>
                 <div style='font-size: 12px; color: #B7CCBB;'>Cotação Atual</div>
-                <div style='font-size: 24px; font-weight: 700;'>${meta['price']:.2f}</div>
+                <div style='font-size: 24px; font-weight: 700;'>${price:.2f}</div>
             </div>
-        </div>
-        """
-
-        parecer_card = f"""
-        <div class='report-card'>
-            <div class='section-title'>Apreciação Qualitativa Automatizada</div>
-            {html_parecer}
         </div>
         """
 
@@ -527,38 +418,31 @@ if btn_executar:
             </div>
             """
 
-        body_html = f"<div class='reit-report-body'>{hero_html}{kpi_html}{parecer_card}{html_historico}{html_peers}{peer_appreciation_card}</div>"
-
         doc_html = f"""
         <!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8">
-            <title>Relatório Executivo REIT - {symbol}</title>
+            <title>Peer Benchmark REIT - {symbol}</title>
             {CSS_STYLES}
         </head>
         <body class="reit-report-body">
             {hero_html}
-            {kpi_html}
-            {parecer_card}
-            {html_historico}
             {html_peers}
             {peer_appreciation_card}
         </body>
         </html>
         """
 
-        # Número de linhas de tabela aproximado, para dimensionar o iframe sem cortar conteúdo
-        num_rows = sum(len(m) for m in hist.values()) + len(df_peers.index)
-        estimated_height = 1650 + num_rows * 42
+        estimated_height = 850 + len(df_peers.index) * 46
         components.html(doc_html, height=estimated_height, scrolling=True)
 
         st.download_button(
-            label="📥 Descarregar Relatório Executivo (HTML)",
+            label="📥 Descarregar Comparação (HTML)",
             data=doc_html,
-            file_name=f"Relatorio_Executivo_{symbol}.html",
+            file_name=f"Peer_Benchmark_REIT_{symbol}.html",
             mime="text/html",
             use_container_width=True,
         )
 else:
-    st.info("👈 Introduz o ticker do REIT alvo e os concorrentes na barra lateral, depois clica em **Gerar Relatório Executivo**.")
+    st.info("👈 Introduz o ticker do REIT alvo e pelo menos um concorrente na barra lateral, depois clica em **Gerar Comparação**.")
