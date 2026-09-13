@@ -6,13 +6,13 @@
 # liquidez, mercado) foram removidas a pedido.
 #
 # CORREÇÃO IMPORTANTE face à versão anterior:
-# Os rácios anteriores misturavam dados ANUAIS (último ano fiscal, que pode
-# ter 6-18 meses face à data de hoje) com o preço de mercado em TEMPO REAL
-# (P/E, EV/EBITDA vindos do campo `info` da Yahoo, que é TTM). Isso produzia
-# valores desalinhados face a sites que usam sempre TTM (últimos 4 trimestres).
-# Agora todos os rácios são calculados em base TTM (trailing twelve months)
-# a partir dos dados trimestrais mais recentes, com fallback explícito e
-# visível para dados anuais quando não há trimestres suficientes.
+# Os rácios já não são recalculados manualmente a partir das demonstrações
+# financeiras (o que introduzia diferenças de metodologia face ao Yahoo
+# Finance — ex.: definição de EBITDA, TTM vs. ano fiscal, ações diluídas vs.
+# básicas). Agora os valores vêm diretamente do campo `info` do yfinance,
+# que é o mesmo feed de dados usado no site finance.yahoo.com, pelo que
+# devem bater certo com o que lá é mostrado. A linha "Dados de Referência"
+# indica a que trimestre/ano os fundamentais dizem respeito em cada ticker.
 # ==============================================================================
 
 import sys
@@ -157,123 +157,60 @@ def safe_div(num, denom):
     return num / denom
 
 
-def _fmt_period_label(col):
-    """Converte a coluna de um DataFrame trimestral/anual do yfinance
-    (Timestamp) numa etiqueta legível AAAA-MM."""
+def _fmt_unix_date(ts):
+    """Converte um timestamp Unix (campo 'mostRecentQuarter' /
+    'lastFiscalYearEnd' do yfinance) numa data legível AAAA-MM-DD."""
+    if ts is None or pd.isna(ts):
+        return None
     try:
-        return pd.to_datetime(col).strftime("%Y-%m")
+        return pd.to_datetime(ts, unit="s").strftime("%Y-%m-%d")
     except Exception:
-        return str(col)[:7]
+        return None
 
 
-def compute_ttm_metrics(ticker_symbol):
-    """Calcula os rácios de um ticker em base TTM (últimos 4 trimestres),
-    com fallback explícito para o último ano fiscal disponível quando não
-    há pelo menos 4 trimestres de dados. Nunca mistura silenciosamente
-    dados de datas diferentes sem assinalar a origem na linha
-    'Dados de Referência'."""
+def compute_yahoo_metrics(ticker_symbol):
+    """Vai buscar os rácios já pré-calculados pela própria Yahoo Finance
+    (campo `info` do yfinance, que é o mesmo feed usado no site
+    finance.yahoo.com), em vez de os recalcular a partir das demonstrações
+    financeiras. Isto evita divergências de metodologia (definição de
+    EBITDA, TTM vs. último trimestre, ações diluídas vs. básicas, etc.)
+    entre a app e o valor mostrado no site. Se um campo não existir para
+    um dado ticker, fica em falta (—) — nunca é estimado ou substituído
+    silenciosamente por um cálculo próprio."""
     t = yf.Ticker(ticker_symbol)
     inf = t.info
 
-    price = inf.get("currentPrice") or inf.get("regularMarketPrice")
-    shares = inf.get("sharesOutstanding")
-
-    if not inf or price is None:
+    if not inf or (inf.get("currentPrice") is None and inf.get("regularMarketPrice") is None):
         raise ValueError(f"Sem dados de mercado disponíveis para '{ticker_symbol}'.")
 
-    q_inc = t.quarterly_financials
-    q_bs = t.quarterly_balance_sheet
-    a_inc = t.financials
-    a_bs = t.balance_sheet
+    # Debt/Equity vem da Yahoo em percentagem (ex.: 154.3 = 1.543x) — só
+    # se converte a unidade de leitura, o valor de origem não é recalculado.
+    debt_equity_pct = inf.get("debtToEquity", np.nan)
+    debt_equity = safe_div(debt_equity_pct, 100) if pd.notna(debt_equity_pct) else np.nan
 
-    has_ttm = (
-        q_inc is not None and not q_inc.empty and q_inc.shape[1] >= 4
-        and "Total Revenue" in q_inc.index
-        and q_bs is not None and not q_bs.empty
-    )
-
-    if has_ttm:
-        source_label = f"TTM (4 trimestres até {_fmt_period_label(q_inc.columns[0])})"
-
-        def q_sum(row_name, n=4):
-            if row_name not in q_inc.index:
-                return np.nan
-            return q_inc.loc[row_name].iloc[:n].sum()
-
-        ttm_revenue = q_sum("Total Revenue")
-        ttm_net_income = q_sum("Net Income")
-
-        if "EBITDA" in q_inc.index:
-            ttm_ebitda = q_sum("EBITDA")
-        elif "EBIT" in q_inc.index and "Reconciled Depreciation" in q_inc.index:
-            ttm_ebitda = q_sum("EBIT") + q_sum("Reconciled Depreciation")
-        else:
-            ttm_ebitda = np.nan
-
-        latest_equity = q_bs.loc["Stockholders Equity"].iloc[0] if "Stockholders Equity" in q_bs.index else np.nan
-        latest_debt = q_bs.loc["Total Debt"].iloc[0] if "Total Debt" in q_bs.index else np.nan
-        latest_cash = q_bs.loc["Cash And Cash Equivalents"].iloc[0] if "Cash And Cash Equivalents" in q_bs.index else 0
-        latest_curr_assets = q_bs.loc["Current Assets"].iloc[0] if "Current Assets" in q_bs.index else np.nan
-        latest_curr_liab = q_bs.loc["Current Liabilities"].iloc[0] if "Current Liabilities" in q_bs.index else np.nan
-
-        # Crescimento de receita YoY: trimestre mais recente vs. o mesmo trimestre há 1 ano
-        if q_inc.shape[1] >= 5:
-            rev_now = q_inc.loc["Total Revenue"].iloc[0]
-            rev_year_ago = q_inc.loc["Total Revenue"].iloc[4]
-            rev_growth = safe_div(rev_now - rev_year_ago, abs(rev_year_ago) if pd.notna(rev_year_ago) else np.nan)
-        else:
-            rev_growth = inf.get("revenueGrowth", np.nan)
+    # Etiqueta de referência: mostra a que trimestre/ano os fundamentais
+    # da Yahoo dizem respeito, para se poder cruzar diretamente com o site.
+    quarter_date = _fmt_unix_date(inf.get("mostRecentQuarter"))
+    fiscal_year_end = _fmt_unix_date(inf.get("lastFiscalYearEnd"))
+    if quarter_date:
+        source_label = f"Yahoo Finance — último trimestre reportado: {quarter_date}"
+    elif fiscal_year_end:
+        source_label = f"Yahoo Finance — último ano fiscal: {fiscal_year_end}"
     else:
-        # Fallback: último ano fiscal completo disponível (assinalado como tal)
-        if a_inc is None or a_inc.empty or a_bs is None or a_bs.empty:
-            raise ValueError(f"Dados financeiros insuficientes (trimestrais e anuais) para '{ticker_symbol}'.")
-
-        fiscal_year = _fmt_period_label(a_inc.columns[0])
-        source_label = f"Anual — dados trimestrais insuficientes (ano fiscal {fiscal_year})"
-
-        ttm_revenue = a_inc.loc["Total Revenue"].iloc[0] if "Total Revenue" in a_inc.index else np.nan
-        ttm_net_income = a_inc.loc["Net Income"].iloc[0] if "Net Income" in a_inc.index else np.nan
-        ttm_ebitda = a_inc.loc["EBITDA"].iloc[0] if "EBITDA" in a_inc.index else np.nan
-
-        latest_equity = a_bs.loc["Stockholders Equity"].iloc[0] if "Stockholders Equity" in a_bs.index else np.nan
-        latest_debt = a_bs.loc["Total Debt"].iloc[0] if "Total Debt" in a_bs.index else np.nan
-        latest_cash = a_bs.loc["Cash And Cash Equivalents"].iloc[0] if "Cash And Cash Equivalents" in a_bs.index else 0
-        latest_curr_assets = a_bs.loc["Current Assets"].iloc[0] if "Current Assets" in a_bs.index else np.nan
-        latest_curr_liab = a_bs.loc["Current Liabilities"].iloc[0] if "Current Liabilities" in a_bs.index else np.nan
-
-        rev_growth = inf.get("revenueGrowth", np.nan)
-
-    market_cap = (price * shares) if (price and shares) else inf.get("marketCap", np.nan)
-    enterprise_value = (
-        market_cap + latest_debt - latest_cash
-        if pd.notna(market_cap) and pd.notna(latest_debt)
-        else np.nan
-    )
-
-    pe = safe_div(market_cap, ttm_net_income)
-    if pd.isna(pe):
-        pe = inf.get("trailingPE", np.nan)
-
-    ev_ebitda = safe_div(enterprise_value, ttm_ebitda)
-    if pd.isna(ev_ebitda):
-        ev_ebitda = inf.get("enterpriseToEbitda", np.nan)
-
-    ev_rev = safe_div(enterprise_value, ttm_revenue)
-    if pd.isna(ev_rev):
-        ev_rev = inf.get("enterpriseToRevenue", np.nan)
+        source_label = "Yahoo Finance — data de referência não disponível"
 
     metrics = {
         FRESHNESS_ROW: source_label,
-        "P/E": pe,
+        "P/E": inf.get("trailingPE", np.nan),
         "Forward P/E": inf.get("forwardPE", np.nan),
-        "EV/EBITDA": ev_ebitda,
-        "P/S (EV/Rev)": ev_rev,
-        "Revenue Growth (YoY)": rev_growth,
-        "ROE": safe_div(ttm_net_income, latest_equity),
-        "EBITDA Margin": safe_div(ttm_ebitda, ttm_revenue),
-        "Net Margin": safe_div(ttm_net_income, ttm_revenue),
-        "Debt/Equity": safe_div(latest_debt, latest_equity),
-        "Current Ratio": safe_div(latest_curr_assets, latest_curr_liab),
+        "EV/EBITDA": inf.get("enterpriseToEbitda", np.nan),
+        "P/S (EV/Rev)": inf.get("enterpriseToRevenue", np.nan),
+        "Revenue Growth (YoY)": inf.get("revenueGrowth", np.nan),
+        "ROE": inf.get("returnOnEquity", np.nan),
+        "EBITDA Margin": inf.get("ebitdaMargins", np.nan),
+        "Net Margin": inf.get("profitMargins", np.nan),
+        "Debt/Equity": debt_equity,
+        "Current Ratio": inf.get("currentRatio", np.nan),
     }
     return metrics, inf
 
@@ -314,7 +251,7 @@ def fetch_peer_benchmark(ticker_symbol, peers_list):
 
     for tk in all_tickers:
         try:
-            metrics, inf = compute_ttm_metrics(tk)
+            metrics, inf = compute_yahoo_metrics(tk)
             comp_data[tk] = metrics
             if tk == ticker_symbol:
                 main_info = inf
@@ -480,7 +417,7 @@ if analyze_button and peers_list:
                     </div>
 
                     <div class='section-title'>Peer Benchmark & Análise Setorial Direta (peers escolhidos manualmente)</div>
-                    <div class='freshness-note'>Rácios calculados em base TTM (últimos 4 trimestres) quando disponível — ver linha "Dados de Referência" para a origem exata por ticker.</div>
+                    <div class='freshness-note'>Rácios obtidos diretamente da Yahoo Finance (mesmo feed do site finance.yahoo.com) — ver linha "Dados de Referência" para o trimestre/ano a que dizem respeito em cada ticker.</div>
                     {format_df_to_html(df_peers)}
 
                     <div class='section-title'>Conclusão & Síntese do Analista</div>
