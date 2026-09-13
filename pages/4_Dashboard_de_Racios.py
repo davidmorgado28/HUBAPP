@@ -1,8 +1,18 @@
 # ==============================================================================
-# 📑 DASHBOARD DE RÁCIOS FINANCEIROS & VALUATION — Aplicação Streamlit
-# Convertido a partir do notebook original (Colab, ipywidgets) para uma página
-# do hub Streamlit. O visual "Wall Street" (CSS customizado) foi mantido
-# integralmente, renderizado via st.markdown(unsafe_allow_html=True).
+# 📑 PEER BENCHMARK & VALUATION COMPARATIVO — Aplicação Streamlit
+# Versão focada exclusivamente na comparação de rácios com pares (peers)
+# escolhidos manualmente, seguida da análise textual. Todas as restantes
+# secções (valuation histórico, crescimento, rentabilidade, alavancagem,
+# liquidez, mercado) foram removidas a pedido.
+#
+# CORREÇÃO IMPORTANTE face à versão anterior:
+# Os rácios anteriores misturavam dados ANUAIS (último ano fiscal, que pode
+# ter 6-18 meses face à data de hoje) com o preço de mercado em TEMPO REAL
+# (P/E, EV/EBITDA vindos do campo `info` da Yahoo, que é TTM). Isso produzia
+# valores desalinhados face a sites que usam sempre TTM (últimos 4 trimestres).
+# Agora todos os rácios são calculados em base TTM (trailing twelve months)
+# a partir dos dados trimestrais mais recentes, com fallback explícito e
+# visível para dados anuais quando não há trimestres suficientes.
 # ==============================================================================
 
 import sys
@@ -23,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from theme import inject_theme, page_header
 
 st.set_page_config(
-    page_title="Dashboard de Rácios & Valuation",
+    page_title="Peer Benchmark & Valuation",
     page_icon="📑",
     layout="wide",
 )
@@ -82,6 +92,10 @@ STYLE_CSS = """
     }
     .section-title::before { content: ''; display: inline-block; width: 4px; height: 18px; background: #2E7D4C; border-radius: 2px; }
 
+    .freshness-note {
+        font-size: 12px; color: #4F7058; margin-top: -6px; margin-bottom: 18px;
+    }
+
     .table-wrapper {
         background: #FFFFFF; border-radius: 12px; border: 1px solid rgba(47,74,56,0.15); overflow: hidden;
         margin-bottom: 24px; box-shadow: 0 1px 3px rgba(30,46,34,0.04);
@@ -127,139 +141,141 @@ STYLE_CSS = """
 """
 
 MAX_PEERS = 6
+FRESHNESS_ROW = "Dados de Referência"
 
 # ------------------------------------------------------------------------------
-# LÓGICA DE CÁLCULO (inalterada, salvo peer benchmark)
+# LÓGICA DE CÁLCULO
 # ------------------------------------------------------------------------------
 def safe_div(num, denom):
-    if denom is None or num is None or denom == 0 or np.isnan(denom) or np.isnan(num):
+    if denom is None or num is None:
+        return np.nan
+    try:
+        if denom == 0 or np.isnan(denom) or np.isnan(num):
+            return np.nan
+    except TypeError:
         return np.nan
     return num / denom
 
 
-@st.cache_data(show_spinner=False, ttl=3600)
-def fetch_financial_data(ticker_symbol):
-    ticker = yf.Ticker(ticker_symbol)
+def _fmt_period_label(col):
+    """Converte a coluna de um DataFrame trimestral/anual do yfinance
+    (Timestamp) numa etiqueta legível AAAA-MM."""
+    try:
+        return pd.to_datetime(col).strftime("%Y-%m")
+    except Exception:
+        return str(col)[:7]
 
-    bs = ticker.balance_sheet
-    inc = ticker.financials
-    cf = ticker.cashflow
-    hist = ticker.history(period="5y")
-    info = ticker.info
 
-    if bs.empty or inc.empty:
-        raise ValueError(f"Não foram encontrados dados suficientes para o ticker: {ticker_symbol}")
+def compute_ttm_metrics(ticker_symbol):
+    """Calcula os rácios de um ticker em base TTM (últimos 4 trimestres),
+    com fallback explícito para o último ano fiscal disponível quando não
+    há pelo menos 4 trimestres de dados. Nunca mistura silenciosamente
+    dados de datas diferentes sem assinalar a origem na linha
+    'Dados de Referência'."""
+    t = yf.Ticker(ticker_symbol)
+    inf = t.info
 
-    years = sorted(list(set(inc.columns) & set(bs.columns) & set(cf.columns)), reverse=True)[:5]
-    if len(years) < 2:
-        raise ValueError("Histórico de dados financeiros insuficiente (mínimo 2 anos necessários).")
+    price = inf.get("currentPrice") or inf.get("regularMarketPrice")
+    shares = inf.get("sharesOutstanding")
 
-    data = {}
-    for yr in years:
-        yr_str = str(yr.year) if hasattr(yr, "year") else str(yr)[:4]
+    if not inf or price is None:
+        raise ValueError(f"Sem dados de mercado disponíveis para '{ticker_symbol}'.")
 
-        tot_assets = bs.loc["Total Assets", yr] if "Total Assets" in bs.index else np.nan
-        tot_equity = bs.loc["Stockholders Equity", yr] if "Stockholders Equity" in bs.index else (
-            bs.loc["Total Equity Gross Minority Interest", yr] if "Total Equity Gross Minority Interest" in bs.index else np.nan
-        )
-        tot_debt = bs.loc["Total Debt", yr] if "Total Debt" in bs.index else np.nan
-        curr_assets = bs.loc["Current Assets", yr] if "Current Assets" in bs.index else np.nan
-        curr_liab = bs.loc["Current Liabilities", yr] if "Current Liabilities" in bs.index else np.nan
-        inventory = bs.loc["Inventory", yr] if "Inventory" in bs.index else 0
-        cash = bs.loc["Cash And Cash Equivalents", yr] if "Cash And Cash Equivalents" in bs.index else 0
+    q_inc = t.quarterly_financials
+    q_bs = t.quarterly_balance_sheet
+    a_inc = t.financials
+    a_bs = t.balance_sheet
 
-        rev = inc.loc["Total Revenue", yr] if "Total Revenue" in inc.index else np.nan
-        ebitda = inc.loc["EBITDA", yr] if "EBITDA" in inc.index else np.nan
-        ebit = inc.loc["EBIT", yr] if "EBIT" in inc.index else (inc.loc["Operating Income", yr] if "Operating Income" in inc.index else np.nan)
-        net_inc = inc.loc["Net Income", yr] if "Net Income" in inc.index else np.nan
-        eps = inc.loc["Diluted EPS", yr] if "Diluted EPS" in inc.index else (inc.loc["Basic EPS", yr] if "Basic EPS" in inc.index else np.nan)
-        interest_exp = abs(inc.loc["Interest Expense", yr]) if "Interest Expense" in inc.index else np.nan
-
-        fcf = cf.loc["Free Cash Flow", yr] if "Free Cash Flow" in cf.index else np.nan
-        div_paid = abs(cf.loc["Cash Dividends Paid", yr]) if "Cash Dividends Paid" in cf.index else 0
-
-        data[yr_str] = {
-            "Revenue": rev, "EBITDA": ebitda, "EBIT": ebit, "Net Income": net_inc, "EPS": eps, "FCF": fcf, "Dividends": div_paid,
-            "Total Debt": tot_debt, "Equity": tot_equity, "Total Assets": tot_assets, "Cash": cash,
-            "ROA": safe_div(net_inc, tot_assets),
-            "ROE": safe_div(net_inc, tot_equity),
-            "ROIC": safe_div(ebit * (1 - 0.21), (tot_equity + tot_debt - cash)),
-            "EBITDA Margin": safe_div(ebitda, rev),
-            "Operating Margin": safe_div(ebit, rev),
-            "Net Margin": safe_div(net_inc, rev),
-            "Current Ratio": safe_div(curr_assets, curr_liab),
-            "Quick Ratio": safe_div(curr_assets - inventory, curr_liab),
-            "Debt/Equity": safe_div(tot_debt, tot_equity),
-            "Debt/EBITDA": safe_div(tot_debt, ebitda),
-            "Interest Coverage": safe_div(ebit, interest_exp),
-        }
-
-    df_hist = pd.DataFrame(data)
-
-    df_growth = pd.DataFrame(
-        index=["Revenue Growth", "EBITDA Growth", "Net Income Growth", "EPS Growth", "FCF Growth", "Dividend Growth"],
-        columns=df_hist.columns,
-    )
-    for metric, name in [
-        ("Revenue", "Revenue Growth"), ("EBITDA", "EBITDA Growth"), ("Net Income", "Net Income Growth"),
-        ("EPS", "EPS Growth"), ("FCF", "FCF Growth"), ("Dividends", "Dividend Growth"),
-    ]:
-        vals = df_hist.loc[metric].values
-        growths = [safe_div(vals[i] - vals[i + 1], abs(vals[i + 1])) if i + 1 < len(vals) else np.nan for i in range(len(vals))]
-        df_growth.loc[name] = growths
-
-    shares_out = info.get("sharesOutstanding", np.nan)
-    val_data = {}
-    for yr_str in df_hist.columns:
-        try:
-            p = hist.loc[hist.index.year == int(yr_str)]["Close"].iloc[-1]
-            mcap = p * shares_out if shares_out else np.nan
-            ev = mcap + df_hist.loc["Total Debt", yr_str] - df_hist.loc["Cash", yr_str] if mcap else np.nan
-        except Exception:
-            p, mcap, ev = np.nan, np.nan, np.nan
-
-        val_data[yr_str] = {
-            "P/E": safe_div(mcap, df_hist.loc["Net Income", yr_str]),
-            "Forward P/E": info.get("forwardPE", np.nan) if yr_str == df_hist.columns[0] else np.nan,
-            "PEG": info.get("pegRatio", np.nan) if yr_str == df_hist.columns[0] else np.nan,
-            "EV/EBITDA": safe_div(ev, df_hist.loc["EBITDA", yr_str]),
-            "EV/EBIT": safe_div(ev, df_hist.loc["EBIT", yr_str]),
-            "EV/Revenue": safe_div(ev, df_hist.loc["Revenue", yr_str]),
-        }
-    df_val = pd.DataFrame(val_data)
-
-    daily_returns = hist["Close"].pct_change().dropna()
-    beta = info.get("beta", np.nan)
-    volatility = daily_returns.std() * np.sqrt(252)
-    cumulative = (1 + daily_returns).cumprod()
-    peak = cumulative.cummax()
-    drawdown = (cumulative - peak) / peak
-    max_drawdown = drawdown.min()
-
-    rf = 0.04
-    ann_return = daily_returns.mean() * 252
-    sharpe = safe_div(ann_return - rf, volatility)
-
-    df_market = pd.DataFrame(
-        {
-            df_hist.columns[0]: {
-                "Beta": beta,
-                "Volatilidade (Anual)": volatility,
-                "Maximum Drawdown": max_drawdown,
-                "Sharpe Ratio": sharpe,
-            }
-        }
+    has_ttm = (
+        q_inc is not None and not q_inc.empty and q_inc.shape[1] >= 4
+        and "Total Revenue" in q_inc.index
+        and q_bs is not None and not q_bs.empty
     )
 
-    return {
-        "info": info,
-        "val": df_val,
-        "growth": df_growth,
-        "profitability": df_hist.loc[["ROA", "ROE", "ROIC", "EBITDA Margin", "Operating Margin", "Net Margin"]],
-        "leverage": df_hist.loc[["Debt/Equity", "Debt/EBITDA", "Interest Coverage"]],
-        "liquidity": df_hist.loc[["Current Ratio", "Quick Ratio"]],
-        "market": df_market,
+    if has_ttm:
+        source_label = f"TTM (4 trimestres até {_fmt_period_label(q_inc.columns[0])})"
+
+        def q_sum(row_name, n=4):
+            if row_name not in q_inc.index:
+                return np.nan
+            return q_inc.loc[row_name].iloc[:n].sum()
+
+        ttm_revenue = q_sum("Total Revenue")
+        ttm_net_income = q_sum("Net Income")
+
+        if "EBITDA" in q_inc.index:
+            ttm_ebitda = q_sum("EBITDA")
+        elif "EBIT" in q_inc.index and "Reconciled Depreciation" in q_inc.index:
+            ttm_ebitda = q_sum("EBIT") + q_sum("Reconciled Depreciation")
+        else:
+            ttm_ebitda = np.nan
+
+        latest_equity = q_bs.loc["Stockholders Equity"].iloc[0] if "Stockholders Equity" in q_bs.index else np.nan
+        latest_debt = q_bs.loc["Total Debt"].iloc[0] if "Total Debt" in q_bs.index else np.nan
+        latest_cash = q_bs.loc["Cash And Cash Equivalents"].iloc[0] if "Cash And Cash Equivalents" in q_bs.index else 0
+        latest_curr_assets = q_bs.loc["Current Assets"].iloc[0] if "Current Assets" in q_bs.index else np.nan
+        latest_curr_liab = q_bs.loc["Current Liabilities"].iloc[0] if "Current Liabilities" in q_bs.index else np.nan
+
+        # Crescimento de receita YoY: trimestre mais recente vs. o mesmo trimestre há 1 ano
+        if q_inc.shape[1] >= 5:
+            rev_now = q_inc.loc["Total Revenue"].iloc[0]
+            rev_year_ago = q_inc.loc["Total Revenue"].iloc[4]
+            rev_growth = safe_div(rev_now - rev_year_ago, abs(rev_year_ago) if pd.notna(rev_year_ago) else np.nan)
+        else:
+            rev_growth = inf.get("revenueGrowth", np.nan)
+    else:
+        # Fallback: último ano fiscal completo disponível (assinalado como tal)
+        if a_inc is None or a_inc.empty or a_bs is None or a_bs.empty:
+            raise ValueError(f"Dados financeiros insuficientes (trimestrais e anuais) para '{ticker_symbol}'.")
+
+        fiscal_year = _fmt_period_label(a_inc.columns[0])
+        source_label = f"Anual — dados trimestrais insuficientes (ano fiscal {fiscal_year})"
+
+        ttm_revenue = a_inc.loc["Total Revenue"].iloc[0] if "Total Revenue" in a_inc.index else np.nan
+        ttm_net_income = a_inc.loc["Net Income"].iloc[0] if "Net Income" in a_inc.index else np.nan
+        ttm_ebitda = a_inc.loc["EBITDA"].iloc[0] if "EBITDA" in a_inc.index else np.nan
+
+        latest_equity = a_bs.loc["Stockholders Equity"].iloc[0] if "Stockholders Equity" in a_bs.index else np.nan
+        latest_debt = a_bs.loc["Total Debt"].iloc[0] if "Total Debt" in a_bs.index else np.nan
+        latest_cash = a_bs.loc["Cash And Cash Equivalents"].iloc[0] if "Cash And Cash Equivalents" in a_bs.index else 0
+        latest_curr_assets = a_bs.loc["Current Assets"].iloc[0] if "Current Assets" in a_bs.index else np.nan
+        latest_curr_liab = a_bs.loc["Current Liabilities"].iloc[0] if "Current Liabilities" in a_bs.index else np.nan
+
+        rev_growth = inf.get("revenueGrowth", np.nan)
+
+    market_cap = (price * shares) if (price and shares) else inf.get("marketCap", np.nan)
+    enterprise_value = (
+        market_cap + latest_debt - latest_cash
+        if pd.notna(market_cap) and pd.notna(latest_debt)
+        else np.nan
+    )
+
+    pe = safe_div(market_cap, ttm_net_income)
+    if pd.isna(pe):
+        pe = inf.get("trailingPE", np.nan)
+
+    ev_ebitda = safe_div(enterprise_value, ttm_ebitda)
+    if pd.isna(ev_ebitda):
+        ev_ebitda = inf.get("enterpriseToEbitda", np.nan)
+
+    ev_rev = safe_div(enterprise_value, ttm_revenue)
+    if pd.isna(ev_rev):
+        ev_rev = inf.get("enterpriseToRevenue", np.nan)
+
+    metrics = {
+        FRESHNESS_ROW: source_label,
+        "P/E": pe,
+        "Forward P/E": inf.get("forwardPE", np.nan),
+        "EV/EBITDA": ev_ebitda,
+        "P/S (EV/Rev)": ev_rev,
+        "Revenue Growth (YoY)": rev_growth,
+        "ROE": safe_div(ttm_net_income, latest_equity),
+        "EBITDA Margin": safe_div(ttm_ebitda, ttm_revenue),
+        "Net Margin": safe_div(ttm_net_income, ttm_revenue),
+        "Debt/Equity": safe_div(latest_debt, latest_equity),
+        "Current Ratio": safe_div(latest_curr_assets, latest_curr_liab),
     }
+    return metrics, inf
 
 
 def parse_peer_tickers(raw_text, main_ticker):
@@ -287,52 +303,28 @@ def parse_peer_tickers(raw_text, main_ticker):
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def fetch_peer_benchmark(ticker_symbol, peers_list):
-    """Vai buscar os rácios de comparação apenas para os tickers explicitamente
+    """Vai buscar os rácios TTM apenas para os tickers explicitamente
     fornecidos pelo utilizador. Nenhum peer é sugerido, adivinhado ou
     preenchido automaticamente — se um ticker falhar, é simplesmente
     ignorado e reportado, nunca substituído silenciosamente."""
     all_tickers = [ticker_symbol] + peers_list
     comp_data = {}
     failed_tickers = []
+    main_info = {}
 
     for tk in all_tickers:
         try:
-            t = yf.Ticker(tk)
-            inf = t.info
-            bs = t.balance_sheet
-            inc = t.financials
-
-            if not inf or inf.get("regularMarketPrice") is None and inf.get("currentPrice") is None:
-                # ticker provavelmente inválido / sem dados de mercado
-                if tk != ticker_symbol:
-                    failed_tickers.append(tk)
-                    continue
-
-            net_inc = inc.loc["Net Income"].iloc[0] if "Net Income" in inc.index else np.nan
-            rev = inc.loc["Total Revenue"].iloc[0] if "Total Revenue" in inc.index else np.nan
-            ebitda = inc.loc["EBITDA"].iloc[0] if "EBITDA" in inc.index else np.nan
-            tot_equity = bs.loc["Stockholders Equity"].iloc[0] if "Stockholders Equity" in bs.index else np.nan
-            tot_debt = bs.loc["Total Debt"].iloc[0] if "Total Debt" in bs.index else np.nan
-
-            comp_data[tk] = {
-                "P/E": inf.get("trailingPE", np.nan),
-                "Forward P/E": inf.get("forwardPE", np.nan),
-                "EV/EBITDA": inf.get("enterpriseToEbitda", np.nan),
-                "P/S (EV/Rev)": inf.get("enterpriseToRevenue", np.nan),
-                "Revenue Growth (YoY)": inf.get("revenueGrowth", np.nan),
-                "ROE": safe_div(net_inc, tot_equity),
-                "EBITDA Margin": safe_div(ebitda, rev),
-                "Net Margin": inf.get("profitMargins", np.nan),
-                "Debt/Equity": safe_div(tot_debt, tot_equity),
-                "Current Ratio": inf.get("currentRatio", np.nan),
-            }
+            metrics, inf = compute_ttm_metrics(tk)
+            comp_data[tk] = metrics
+            if tk == ticker_symbol:
+                main_info = inf
         except Exception:
             if tk != ticker_symbol:
                 failed_tickers.append(tk)
             else:
                 raise
 
-    return pd.DataFrame(comp_data), failed_tickers
+    return pd.DataFrame(comp_data), failed_tickers, main_info
 
 
 def generate_peer_appreciation(ticker_symbol, df_comp):
@@ -343,8 +335,9 @@ def generate_peer_appreciation(ticker_symbol, df_comp):
     if peers_only.empty:
         return "Sem concorrentes válidos para comparação."
 
-    target = df_comp[ticker_symbol]
-    peers_median = peers_only.median(axis=1)
+    numeric_rows = [r for r in df_comp.index if r != FRESHNESS_ROW]
+    target = df_comp.loc[numeric_rows, ticker_symbol]
+    peers_median = peers_only.loc[numeric_rows].median(axis=1)
 
     pe_rel = safe_div(target["P/E"], peers_median["P/E"])
     pe_rel = pe_rel - 1 if pd.notna(pe_rel) else np.nan
@@ -373,7 +366,7 @@ def generate_peer_appreciation(ticker_symbol, df_comp):
             rent_badge = "<span class='badge badge-danger'>Abaixo da Média</span>"
         else:
             rent_badge = "<span class='badge badge-warning'>Mista</span>"
-        rent_txt = f"o ROE de <b>{roe_target*100:.2f}%</b> compara com uma mediana de <b>{roe_peers*100:.2f}%</b>, e a margem EBITDA de <b>{margin_target*100:.2f}%</b> compara com <b>{margin_peers*100:.2f}%</b> no grupo de pares"
+        rent_txt = f"o ROE (TTM) de <b>{roe_target*100:.2f}%</b> compara com uma mediana de <b>{roe_peers*100:.2f}%</b>, e a margem EBITDA (TTM) de <b>{margin_target*100:.2f}%</b> compara com <b>{margin_peers*100:.2f}%</b> no grupo de pares"
     else:
         rent_badge, rent_txt = "<span class='badge badge-neutral'>N/A</span>", "dados de rentabilidade insuficientes para comparação"
 
@@ -397,13 +390,20 @@ def format_df_to_html(df):
     for col in df_formatted.columns:
         for idx in df_formatted.index:
             val = df_formatted.loc[idx, col]
+
+            if idx == FRESHNESS_ROW:
+                df_formatted.loc[idx, col] = f"<span style='color:#4F7058; font-size:12px;'>{val}</span>"
+                continue
+
             if pd.isna(val) or val is None:
                 df_formatted.loc[idx, col] = "<span style='color:#8FA096;'>—</span>"
-            elif "Growth" in idx or "ROA" in idx or "ROE" in idx or "ROIC" in idx or "Margin" in idx or "Volatilidade" in idx or "Drawdown" in idx:
+            elif "Growth" in idx or "ROE" in idx or "Margin" in idx:
                 color = "#059669" if val > 0 else ("#dc2626" if val < 0 else "#1C2420")
                 df_formatted.loc[idx, col] = f"<span style='color:{color}; font-weight:500;'>{val * 100:.2f}%</span>"
+            elif "Ratio" in idx:
+                df_formatted.loc[idx, col] = f"{val:.2f}"
             else:
-                df_formatted.loc[idx, col] = f"{val:.2f}x" if "Ratio" not in idx and "Sharpe" not in idx and "Beta" not in idx else f"{val:.2f}"
+                df_formatted.loc[idx, col] = f"{val:.2f}x"
 
     table_html = df_formatted.to_html(classes="finance-table", escape=False)
     return f"<div class='table-wrapper'>{table_html}</div>"
@@ -414,8 +414,8 @@ def format_df_to_html(df):
 # ------------------------------------------------------------------------------
 page_header(
     "📑",
-    "Dashboard de Rácios Financeiros & Valuation",
-    "Relatório estilo Wall Street: valuation, crescimento, rentabilidade, alavancagem, liquidez, risco e benchmark de pares.",
+    "Peer Benchmark & Valuation Comparativo",
+    "Comparação de rácios (base TTM) entre a empresa e os concorrentes diretos escolhidos manualmente.",
 )
 
 with st.sidebar:
@@ -428,7 +428,7 @@ with st.sidebar:
         "Tickers dos concorrentes (separados por vírgula)",
         value="",
         placeholder="Ex.: MSFT, GOOGL, AMZN",
-        help=f"Máximo de {MAX_PEERS} tickers. Escolhe tu próprio os concorrentes diretos — a aplicação já não sugere peers automaticamente.",
+        help=f"Máximo de {MAX_PEERS} tickers. Escolhe tu próprio os concorrentes diretos — a aplicação não sugere peers automaticamente.",
     )
 
     main_ticker_upper = ticker_input.strip().upper()
@@ -441,100 +441,70 @@ with st.sidebar:
         st.warning(f"⚠️ Indicaste {len(peers_list)} peers; apenas os primeiros {MAX_PEERS} serão usados: {', '.join(peers_list[:MAX_PEERS])}")
         peers_list = peers_list[:MAX_PEERS]
 
-    if peers_input.strip() and not peers_list:
-        st.error("❌ Nenhum peer válido foi reconhecido nesse texto. Verifica os tickers introduzidos.")
-
     if not peers_input.strip():
-        st.info("ℹ️ Sem peers indicados — o relatório será gerado sem a secção 7 (Peer Benchmark).")
+        st.info("ℹ️ Indica pelo menos um peer para gerar a comparação.")
     elif peers_list:
         st.caption(f"Peers a usar: {', '.join(peers_list)}")
+    else:
+        st.error("❌ Nenhum peer válido foi reconhecido nesse texto. Verifica os tickers introduzidos.")
 
-    analyze_button = st.button("📊 Gerar Relatório Premium", type="primary", use_container_width=True)
+    analyze_button = st.button("📊 Gerar Comparação", type="primary", use_container_width=True, disabled=not peers_list)
 
-if analyze_button:
+if analyze_button and peers_list:
     symbol = main_ticker_upper
-    with st.spinner(f"⚡ A extrair demonstrações financeiras e a recalcular indicadores para {symbol}..."):
+    with st.spinner(f"⚡ A extrair dados trimestrais (TTM) para {symbol} e {len(peers_list)} peer(s)..."):
         try:
-            data = fetch_financial_data(symbol)
-            sector = data["info"].get("sector", "—")
-            company_name = data["info"].get("longName", symbol)
+            df_peers, failed_tickers, main_info = fetch_peer_benchmark(symbol, peers_list)
 
-            df_peers = pd.DataFrame()
-            appreciation_html = "Sem peers indicados — não foi possível gerar a análise comparativa automatizada."
-            peer_section_html = ""
+            if failed_tickers:
+                st.warning(f"⚠️ Não foi possível obter dados para: {', '.join(failed_tickers)}. Foram excluídos da comparação.")
 
-            if peers_list:
-                df_peers, failed_tickers = fetch_peer_benchmark(symbol, peers_list)
+            if df_peers.shape[1] <= 1:
+                st.error("❌ Nenhum dos peers indicados devolveu dados válidos. Não é possível gerar a comparação.")
+            else:
+                sector = main_info.get("sector", "—")
+                company_name = main_info.get("longName", symbol)
+                appreciation_html = generate_peer_appreciation(symbol, df_peers)
 
-                if failed_tickers:
-                    st.warning(f"⚠️ Não foi possível obter dados para: {', '.join(failed_tickers)}. Foram excluídos da comparação.")
+                html_body = f"""
+                <div class='report-container'>
+                    <div class='header-card'>
+                        <div>
+                            <h1>{company_name} ({symbol})</h1>
+                            <div class='subtitle'>Peer Benchmark & Valuation Comparativo (base TTM)</div>
+                        </div>
+                        <div>
+                            <span class='badge-sector'>{sector}</span>
+                            <div style='color: #B7CCBB; font-size: 11px; margin-top: 6px; text-align: right;'>{datetime.now().strftime('%d/%m/%Y')}</div>
+                        </div>
+                    </div>
 
-                if df_peers.shape[1] <= 1:
-                    st.error("❌ Nenhum dos peers indicados devolveu dados válidos. A secção de benchmark foi omitida.")
-                else:
-                    appreciation_html = generate_peer_appreciation(symbol, df_peers)
-                    peer_section_html = f"""
-                <div class='section-title'>7. Peer Benchmark & Análise Setorial Direta (peers escolhidos manualmente)</div>
-                {format_df_to_html(df_peers)}
+                    <div class='section-title'>Peer Benchmark & Análise Setorial Direta (peers escolhidos manualmente)</div>
+                    <div class='freshness-note'>Rácios calculados em base TTM (últimos 4 trimestres) quando disponível — ver linha "Dados de Referência" para a origem exata por ticker.</div>
+                    {format_df_to_html(df_peers)}
+
+                    <div class='section-title'>Conclusão & Síntese do Analista</div>
+                    <div class='analysis-card'>
+                        {appreciation_html}
+                    </div>
+                </div>
                 """
 
-            html_body = f"""
-            <div class='report-container'>
-                <div class='header-card'>
-                    <div>
-                        <h1>{company_name} ({symbol})</h1>
-                        <div class='subtitle'>Relatório de Análise Financeira, Rácios e Valuation Comparativo</div>
-                    </div>
-                    <div>
-                        <span class='badge-sector'>{sector}</span>
-                        <div style='color: #B7CCBB; font-size: 11px; margin-top: 6px; text-align: right;'>{datetime.now().strftime('%d/%m/%Y')}</div>
-                    </div>
-                </div>
+                full_html = f"<!DOCTYPE html><html><head><meta charset='utf-8'><title>Peer Benchmark {symbol}</title>{STYLE_CSS}</head><body style='background:#F1EEE4; padding:20px;'>{html_body}</body></html>"
 
-                <div class='section-title'>1. Múltiplos de Valuation (Evolução Histórica)</div>
-                {format_df_to_html(data['val'])}
+                num_rows = len(df_peers.index)
+                estimated_height = 900 + num_rows * 42
+                components.html(full_html, height=estimated_height, scrolling=True)
 
-                <div class='section-title'>2. Crescimento Histórico YoY</div>
-                {format_df_to_html(data['growth'])}
-
-                <div class='section-title'>3. Margens e Indicadores de Rentabilidade</div>
-                {format_df_to_html(data['profitability'])}
-
-                <div class='section-title'>4. Estrutura de Capital e Endividamento</div>
-                {format_df_to_html(data['leverage'])}
-
-                <div class='section-title'>5. Rácios de Liquidez</div>
-                {format_df_to_html(data['liquidity'])}
-
-                <div class='section-title'>6. Métricas de Mercado, Volatilidade e Risco (5 Anos)</div>
-                {format_df_to_html(data['market'])}
-                {peer_section_html}
-                <div class='section-title'>8. Conclusão & Síntese do Analista</div>
-                <div class='analysis-card'>
-                    {appreciation_html}
-                </div>
-            </div>
-            """
-
-            full_html = f"<!DOCTYPE html><html><head><meta charset='utf-8'><title>Relatório {symbol}</title>{STYLE_CSS}</head><body style='background:#F1EEE4; padding:20px;'>{html_body}</body></html>"
-
-            # Número de linhas de tabela aproximado, para dimensionar o iframe sem cortar conteúdo
-            tables_for_sizing = [data['val'], data['growth'], data['profitability'], data['leverage'], data['liquidity'], data['market']]
-            if not df_peers.empty:
-                tables_for_sizing.append(df_peers)
-            num_rows = sum(len(df.index) for df in tables_for_sizing)
-            estimated_height = 1400 + num_rows * 42
-            components.html(full_html, height=estimated_height, scrolling=True)
-
-            st.download_button(
-                label="⬇️ Descarregar Relatório Completo em HTML",
-                data=full_html,
-                file_name=f"Relatorio_Valuation_{symbol}_{datetime.now().strftime('%Y%m%d')}.html",
-                mime="text/html",
-                use_container_width=True,
-            )
+                st.download_button(
+                    label="⬇️ Descarregar Comparação em HTML",
+                    data=full_html,
+                    file_name=f"Peer_Benchmark_{symbol}_{datetime.now().strftime('%Y%m%d')}.html",
+                    mime="text/html",
+                    use_container_width=True,
+                )
 
         except Exception as e:
-            st.error(f"❌ Erro ao gerar análise para {symbol}: {e}")
+            st.error(f"❌ Erro ao gerar comparação para {symbol}: {e}")
 else:
-    st.info("👈 Introduz o ticker principal e (opcionalmente) os peers na barra lateral e clica em **Gerar Relatório Premium** para começar.")
+    st.info("👈 Introduz o ticker principal e pelo menos um peer na barra lateral e clica em **Gerar Comparação** para começar.")
