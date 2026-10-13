@@ -6,9 +6,14 @@
 # ATUALIZAÇÃO: benchmark selecionável (S&P 500, NASDAQ, Dow, PSI, DAX, CAC,
 # FTSE, IBEX, etc. ou ticker personalizado), Stress Test, diversificação
 # setorial/geográfica, e tabela cruzada Cap Size x Estilo.
+#
+# CORREÇÃO: obtenção de dados fundamentais (setor, país, market cap, P/E, P/B)
+# com tentativas repetidas, fallback para fast_info e SEM guardar falhas em
+# cache. A interface avisa quais os tickers sem dados.
 # ==============================================================================
 
 import sys
+import time
 import warnings
 from pathlib import Path
 
@@ -97,17 +102,45 @@ def download_prices(all_tickers, start_date):
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
+def _info_cached(t):
+    """Obtém o dicionário .info de um ticker, com tentativas repetidas.
+
+    Se todas as tentativas falharem, levanta exceção — o Streamlit NÃO guarda
+    em cache funções que levantam exceção, por isso uma falha temporária do
+    Yahoo não fica 'presa' durante 1 hora.
+    """
+    last_err = None
+    for attempt in range(3):
+        try:
+            info = yf.Ticker(t).get_info() or {}
+            if info.get("quoteType") or info.get("sector") or info.get("marketCap"):
+                return info
+        except Exception as e:
+            last_err = e
+        time.sleep(0.8 * (attempt + 1))
+    raise ValueError(f"Sem dados de {t}: {last_err}")
+
+
 def get_ticker_fundamentals(tickers):
     """Obtém setor, país, tipo de instrumento, market cap, P/E e P/B por ticker."""
     fundamentals = {}
     for t in tickers:
+        ok = True
         try:
-            info = yf.Ticker(t).info
+            info = _info_cached(t)
         except Exception:
-            info = {}
+            info, ok = {}, False
 
         is_crypto = t.upper().endswith("-USD") or info.get("quoteType") == "CRYPTOCURRENCY"
         quote_type = info.get("quoteType", "N/D")
+
+        # Fallback para a capitalização de mercado via fast_info
+        market_cap = info.get("marketCap")
+        if market_cap is None and not is_crypto:
+            try:
+                market_cap = yf.Ticker(t).fast_info["market_cap"]
+            except Exception:
+                market_cap = None
 
         fundamentals[t] = {
             "sector": "Criptomoeda" if is_crypto else (info.get("sector") or (
@@ -115,10 +148,11 @@ def get_ticker_fundamentals(tickers):
             )),
             "country": "Global / Descentralizado" if is_crypto else (info.get("country") or "Não Especificado"),
             "quote_type": quote_type,
-            "market_cap": info.get("marketCap"),
+            "market_cap": market_cap,
             "trailing_pe": info.get("trailingPE"),
             "price_to_book": info.get("priceToBook"),
             "is_crypto": is_crypto,
+            "ok": ok,
         }
     return fundamentals
 
@@ -480,6 +514,7 @@ def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dc
     stress_df = build_stress_test_table(df_results, benchmark_label, top_n=5)
 
     fundamentals = get_ticker_fundamentals(tickers)
+    fundamentals_failed = [t for t, f in fundamentals.items() if not f.get("ok", True)]
     sector_series, country_series, capstyle_table, excluded_capstyle = build_diversification_data(
         tickers, weights, fundamentals
     )
@@ -544,6 +579,7 @@ def run_portfolio_analysis(tickers, weights, start_date, initial_inv, monthly_dc
         "country_series": country_series,
         "capstyle_table": capstyle_table,
         "excluded_capstyle": excluded_capstyle,
+        "fundamentals_failed": fundamentals_failed,
         "html_content": html_content,
     }
 
@@ -642,6 +678,15 @@ if run_button:
                     st.dataframe(result["stress_df"], use_container_width=True, hide_index=True)
                 else:
                     st.info("Não foram detetadas quedas relevantes (> 3%) no período selecionado.")
+
+                # ---- Aviso se o Yahoo não devolveu dados fundamentais ----
+                if result["fundamentals_failed"]:
+                    st.warning(
+                        "⚠️ Não foi possível obter dados fundamentais do Yahoo Finance para: "
+                        f"{', '.join(result['fundamentals_failed'])}. "
+                        "Os gráficos de setor/geografia e a tabela Cap x Estilo podem estar incompletos — "
+                        "tenta novamente dentro de alguns minutos."
+                    )
 
                 # ---- Diversificação Setorial e Geográfica ----
                 st.subheader("🌍 Diversificação Setorial e Geográfica")
