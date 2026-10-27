@@ -410,13 +410,6 @@ else:
         st.markdown(f"**{title}**")
         grids[key] = st.data_editor(base_df, use_container_width=True, key=f"ddmgrid_{key}_{app_data['ticker']}")
 
-    st.markdown("**Payout Ratio** = 1 − (crescimento do Equity / ROE)")
-    pt = payout_table(app_data, grids["ROE"], grids["Equity"])
-    st.dataframe(pt.astype(object).apply(lambda c: c.map(lambda x: "—" if pd.isna(x) else f"{x * 100:.2f}%")),
-                 use_container_width=True)
-    if ((pt < 0) | (pt > 1)).any().any():
-        st.warning("Há Payouts negativos ou acima de 100% — confirma os pressupostos de ROE e Equity.")
-
     st.markdown("### 💵 Custo do Capital Próprio (Ke — Calculado por CAPM)")
     st.caption(
         f"Ke = Rf + β × MRP = {app_data['rf'] * 100:.2f}% (T-Bond 10Y) + {app_data['beta']:.2f} × "
@@ -455,6 +448,10 @@ else:
 
             st.markdown(f"### ✅ Valuação Concluída para {app_data['company_name']}")
             st.dataframe(pd.DataFrame(summary), use_container_width=True, hide_index=True)
+
+            payouts = pd.concat([tables[sc].loc["Payout Ratio (%)"] for sc in SCENARIOS])
+            if ((payouts < 0) | (payouts > 100)).any():
+                st.warning("Há Payouts negativos ou acima de 100% — confirma os pressupostos de ROE e Equity.")
 
             for scen in SCENARIOS:
                 with st.expander(f"Projeções — Cenário {scen}"):
