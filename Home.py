@@ -251,6 +251,11 @@ st.markdown(
             <div class="app-desc">Valuação por Discounted Cash Flow em 3 cenários, com WACC calculado dinamicamente.</div>
         </div>
         <div class="app-card">
+            <div class="app-icon">💵</div>
+            <div class="app-name">Modelo DDM</div>
+            <div class="app-desc">Valuação por Dividend Discount Model em 3 cenários, com projeção de ROE, Equity, Payout e Buyback Yield e Ke calculado por CAPM.</div>
+        </div>
+        <div class="app-card">
             <div class="app-icon">📑</div>
             <div class="app-name">Dashboard de Rácios & Valuation</div>
             <div class="app-desc">Relatório de rácios financeiros: valuation, rentabilidade, alavancagem, liquidez e benchmark de pares.</div>
