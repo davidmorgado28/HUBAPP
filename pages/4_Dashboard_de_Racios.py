@@ -5,14 +5,13 @@
 # secções (valuation histórico, crescimento, rentabilidade, alavancagem,
 # liquidez, mercado) foram removidas a pedido.
 #
-# CORREÇÃO IMPORTANTE face à versão anterior:
-# Os rácios já não são recalculados manualmente a partir das demonstrações
-# financeiras (o que introduzia diferenças de metodologia face ao Yahoo
-# Finance — ex.: definição de EBITDA, TTM vs. ano fiscal, ações diluídas vs.
-# básicas). Agora os valores vêm diretamente do campo `info` do yfinance,
-# que é o mesmo feed de dados usado no site finance.yahoo.com, pelo que
-# devem bater certo com o que lá é mostrado. A linha "Dados de Referência"
-# indica a que trimestre/ano os fundamentais dizem respeito em cada ticker.
+# Os rácios vêm diretamente do campo `info` do yfinance (mesmo feed do site
+# finance.yahoo.com). A linha "Dados de Referência" indica a que
+# trimestre/ano os fundamentais dizem respeito em cada ticker.
+#
+# Exceções calculadas a partir de campos do mesmo `info` (a Yahoo não os
+# entrega prontos): Debt/EBITDA (totalDebt / ebitda) e FCF Margin
+# (freeCashflow / totalRevenue).
 # ==============================================================================
 
 import sys
@@ -176,7 +175,10 @@ def compute_yahoo_metrics(ticker_symbol):
     EBITDA, TTM vs. último trimestre, ações diluídas vs. básicas, etc.)
     entre a app e o valor mostrado no site. Se um campo não existir para
     um dado ticker, fica em falta (—) — nunca é estimado ou substituído
-    silenciosamente por um cálculo próprio."""
+    silenciosamente por um cálculo próprio.
+
+    Exceções: Debt/EBITDA e FCF Margin não existem prontos na Yahoo, por
+    isso são calculados a partir de campos do próprio `info`."""
     t = yf.Ticker(ticker_symbol)
     inf = t.info
 
@@ -187,6 +189,16 @@ def compute_yahoo_metrics(ticker_symbol):
     # se converte a unidade de leitura, o valor de origem não é recalculado.
     debt_equity_pct = inf.get("debtToEquity", np.nan)
     debt_equity = safe_div(debt_equity_pct, 100) if pd.notna(debt_equity_pct) else np.nan
+
+    # Debt/EBITDA e FCF Margin: calculados a partir de campos do `info`.
+    total_debt = inf.get("totalDebt")
+    ebitda_abs = inf.get("ebitda")
+    if total_debt is not None and ebitda_abs is not None and pd.notna(ebitda_abs) and ebitda_abs > 0:
+        debt_ebitda = total_debt / ebitda_abs
+    else:
+        debt_ebitda = np.nan  # EBITDA negativo/ausente → rácio sem significado
+
+    fcf_margin = safe_div(inf.get("freeCashflow"), inf.get("totalRevenue"))
 
     # Etiqueta de referência: mostra a que trimestre/ano os fundamentais
     # da Yahoo dizem respeito, para se poder cruzar diretamente com o site.
@@ -204,12 +216,13 @@ def compute_yahoo_metrics(ticker_symbol):
         "P/E": inf.get("trailingPE", np.nan),
         "Forward P/E": inf.get("forwardPE", np.nan),
         "EV/EBITDA": inf.get("enterpriseToEbitda", np.nan),
-        "P/S (EV/Rev)": inf.get("enterpriseToRevenue", np.nan),
         "Revenue Growth (YoY)": inf.get("revenueGrowth", np.nan),
         "ROE": inf.get("returnOnEquity", np.nan),
         "EBITDA Margin": inf.get("ebitdaMargins", np.nan),
         "Net Margin": inf.get("profitMargins", np.nan),
+        "FCF Margin": fcf_margin,
         "Debt/Equity": debt_equity,
+        "Debt/EBITDA": debt_ebitda,
         "Current Ratio": inf.get("currentRatio", np.nan),
     }
     return metrics, inf
@@ -282,6 +295,7 @@ def generate_peer_appreciation(ticker_symbol, df_comp):
     roe_target, roe_peers = target.get("ROE"), peers_median.get("ROE")
     margin_target, margin_peers = target.get("EBITDA Margin"), peers_median.get("EBITDA Margin")
     debt_target, debt_peers = target.get("Debt/Equity"), peers_median.get("Debt/Equity")
+    dE_target, dE_peers = target.get("Debt/EBITDA"), peers_median.get("Debt/EBITDA")
 
     # --- Valuation (P/E vs. mediana dos pares) ---
     if pd.notna(pe_rel):
@@ -314,10 +328,28 @@ def generate_peer_appreciation(ticker_symbol, df_comp):
     else:
         debt_badge, debt_txt = "<span class='badge badge-neutral'>N/A</span>", "Debt/Equity indisponível para comparação"
 
+    # --- Capacidade de pagamento da dívida (Debt/EBITDA) ---
+    if pd.notna(dE_target):
+        if dE_target < 1:
+            nivel = "muito baixo, a dívida bruta equivale a menos de um ano de EBITDA"
+        elif dE_target < 2.5:
+            nivel = "confortável, com folga clara para servir e amortizar a dívida"
+        elif dE_target < 4:
+            nivel = "moderado, que exige acompanhamento da evolução do EBITDA e dos juros"
+        else:
+            nivel = "elevado, com pouca margem de segurança se o EBITDA recuar"
+        dE_txt = f"O <b>Debt/EBITDA de {dE_target:.2f}x</b> é um nível {nivel} (a empresa precisaria de cerca de {dE_target:.1f} anos de EBITDA para liquidar a dívida bruta)"
+        if pd.notna(dE_peers):
+            rel = "inferior" if dE_target < dE_peers else "superior"
+            dE_txt += f", e é {rel} à mediana dos pares ({dE_peers:.2f}x)"
+        dE_txt += "."
+    else:
+        dE_txt = "O Debt/EBITDA não é interpretável (EBITDA negativo ou indisponível), pelo que a capacidade de pagamento da dívida não pode ser aferida por este rácio."
+
     text = f"""
     <p>Em termos de valuation, a <b>{ticker_symbol}</b> {val_badge} — {val_txt}.</p>
     <p>Ao nível da rentabilidade, {rent_badge} face aos pares diretos — {rent_txt}.</p>
-    <p>Quanto à estrutura de capital, {debt_badge} — {debt_txt}.</p>
+    <p>Quanto à estrutura de capital, {debt_badge} — {debt_txt}. {dE_txt}</p>
     """
     return text
 
@@ -417,7 +449,7 @@ if analyze_button and peers_list:
                     </div>
 
                     <div class='section-title'>Peer Benchmark & Análise Setorial Direta (peers escolhidos manualmente)</div>
-                    <div class='freshness-note'>Rácios obtidos diretamente da Yahoo Finance (mesmo feed do site finance.yahoo.com) — ver linha "Dados de Referência" para o trimestre/ano a que dizem respeito em cada ticker.</div>
+                    <div class='freshness-note'>Rácios obtidos da Yahoo Finance (mesmo feed do site finance.yahoo.com), exceto Debt/EBITDA e FCF Margin, calculados a partir de campos do mesmo feed — ver linha "Dados de Referência" para o trimestre/ano a que dizem respeito em cada ticker.</div>
                     {format_df_to_html(df_peers)}
 
                     <div class='section-title'>Conclusão & Síntese do Analista</div>
